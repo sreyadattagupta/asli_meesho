@@ -1,0 +1,50 @@
+// The dual-backend data seam. Both InMemoryRepo and SupabaseRepo must satisfy this exactly.
+import type {
+  User, Role, Seller, Listing, ListingStatus, ProductImage, Challenge,
+  AuthenticityCheck, SizeMeasurement, Order, PromiseRecord, TrustEvent,
+  Review, AuditEntry,
+} from "./types";
+
+export interface Repo {
+  // users
+  getUserByAuth0Sub(sub: string): Promise<User | null>;
+  createUser(u: Omit<User, "id" | "createdAt">): Promise<User>;
+  setUserRole(id: string, role: Role, sellerId?: string): Promise<User>;
+  listUsers(): Promise<User[]>;
+  // sellers
+  getSeller(id: string): Promise<Seller | null>;
+  createSeller(s: Omit<Seller, "id" | "createdAt">): Promise<Seller>;
+  updateSeller(id: string, patch: Partial<Seller>): Promise<Seller>;
+  // listings
+  createListing(l: Omit<Listing, "id" | "createdAt">): Promise<Listing>;
+  getListing(id: string): Promise<Listing | null>;
+  listListings(filter?: { verified?: boolean; sellerId?: string; status?: ListingStatus }): Promise<Listing[]>;
+  updateListing(id: string, patch: Partial<Listing>): Promise<Listing>;
+  // images
+  addImage(i: Omit<ProductImage, "id">): Promise<ProductImage>;
+  listImages(listingId: string): Promise<ProductImage[]>;
+  // challenges (invariant #3)
+  issueChallenge(code: string, ttlSeconds: number): Promise<Challenge>;
+  /** Atomic single-use claim: null if unknown, expired, or already used. */
+  claimChallenge(code: string, listingId: string): Promise<Challenge | null>;
+  // checks + measurements
+  addCheck(c: Omit<AuthenticityCheck, "id" | "createdAt">): Promise<AuthenticityCheck>;
+  listChecks(listingId: string): Promise<AuthenticityCheck[]>;
+  addMeasurement(m: Omit<SizeMeasurement, "id">): Promise<SizeMeasurement>;
+  getMeasurement(listingId: string): Promise<SizeMeasurement | null>;
+  // orders + promises
+  createOrder(o: Omit<Order, "id" | "placedAt">): Promise<Order>;
+  getOrder(id: string): Promise<Order | null>;
+  listOrdersByBuyer(buyerUserId: string): Promise<Order[]>;
+  advanceOrder(id: string): Promise<Order>; // placed→shipped→delivered (idempotent at delivered)
+  upsertPromise(p: Omit<PromiseRecord, "id">): Promise<PromiseRecord>;
+  getPromiseByListing(listingId: string): Promise<PromiseRecord | null>;
+  // trust + reviews + audit
+  addTrustEvent(e: Omit<TrustEvent, "id" | "createdAt">): Promise<TrustEvent>;
+  listTrustEvents(sellerId: string): Promise<TrustEvent[]>;
+  createReview(r: Omit<Review, "id">): Promise<Review>;
+  listPendingReviews(): Promise<Review[]>;
+  decideReview(id: string, status: "approved" | "rejected", note: string, reviewerUserId: string): Promise<Review>;
+  appendAudit(a: Omit<AuditEntry, "id" | "createdAt">): Promise<AuditEntry>;
+  listAudit(listingId: string): Promise<AuditEntry[]>;
+}

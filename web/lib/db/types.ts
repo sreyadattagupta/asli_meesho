@@ -1,0 +1,21 @@
+// Domain types — every entity from CLAUDE.md §7. Locked contract for all phases.
+export type Role = "seller" | "buyer" | "admin";
+export type ListingStatus = "draft" | "pending" | "live" | "blocked" | "escalated" | "rejected";
+export type KycStatus = "pending" | "submitted" | "verified";
+export type OrderStatus = "placed" | "shipped" | "delivered";
+export type ImageKind = "catalog" | "live" | "flatlay" | "delivery" | "kyc";
+export type PaymentMethod = "cod" | "upi_mock";
+export type TrustBand = "high" | "medium" | "low";
+
+export interface User { id: string; auth0Sub: string; email: string; name: string; role: Role; sellerId?: string; createdAt: string; }
+export interface Seller { id: string; userId?: string; name: string; shopName: string; trustScore: number; trustBand: TrustBand; kycStatus: KycStatus; kycDocUrl?: string; isNew: boolean; passes: number; fails: number; createdAt: string; }
+export interface Listing { id: string; sellerId: string; title: string; description: string; price: number; category: string; status: ListingStatus; flowStep: string; verified: boolean; sizeChart?: Record<string, number>; rankBoost: number; createdAt: string; }
+export interface ProductImage { id: string; listingId: string; url: string; imageHash: string; embeddingId?: string; kind: ImageKind; }
+export interface Challenge { code: string; listingId?: string; issuedAt: string; expiresAt: string; usedAt?: string; }
+export interface AuthenticityCheck { id: string; listingId: string; agent: string; payload: Record<string, unknown>; confidence: number; action: string; requiredConfidence: number; reason: string; createdAt: string; }
+export interface SizeMeasurement { id: string; listingId: string; chestCm: number; lengthCm: number; waistCm: number; referenceUsed: string; confidence: number; mappedSize: string; }
+export interface Order { id: string; listingId: string; buyerUserId: string; address: Record<string, string>; paymentMethod: PaymentMethod; status: OrderStatus; placedAt: string; deliveredAt?: string; }
+export interface PromiseRecord { id: string; listingId: string; orderId?: string; frozen: Record<string, unknown>; deliveryPhotoUrl?: string; kept?: boolean; confidence?: number; checkedAt?: string; }
+export interface TrustEvent { id: string; sellerId: string; delta: number; reason: string; source: string; createdAt: string; }
+export interface Review { id: string; listingId: string; status: "pending" | "approved" | "rejected"; reviewerNote?: string; reviewerUserId?: string; decidedAt?: string; }
+export interface AuditEntry { id: number; listingId?: string; actor: string; event: string; data: Record<string, unknown>; createdAt: string; }
