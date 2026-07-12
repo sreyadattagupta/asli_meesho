@@ -2,8 +2,18 @@
 
 import { useEffect, useState } from "react";
 import CameraCapture, { CapturedPhoto } from "@/components/CameraCapture";
+import { StreamingChecklist } from "@/components/ui/StreamingChecklist";
 import { useSellerStore } from "@/lib/store";
 import { decide } from "@/lib/orchestrator";
+
+type CheckState = "pending" | "active" | "done" | "failed";
+const IDLE_CHECKS: { id: string; label: string; state: CheckState }[] = [
+  { id: "product", label: "Checking product", state: "pending" },
+  { id: "code", label: "Reading code", state: "pending" },
+  { id: "live", label: "Scoring live capture", state: "pending" },
+];
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // Step 3 — THE SHOWPIECE. Dynamic, time-bound, single-use code (invariant #3);
 // camera-only capture (invariant #2); VLM verifies same-item + code; the
@@ -24,6 +34,10 @@ export default function ChallengeStep() {
   const [busy, setBusy] = useState(false);
   const [remaining, setRemaining] = useState<number>(0);
   const [note, setNote] = useState<string | null>(null);
+  const [checks, setChecks] = useState(IDLE_CHECKS);
+
+  const setCheck = (id: string, state: CheckState) =>
+    setChecks((prev) => prev.map((c) => (c.id === id ? { ...c, state } : c)));
 
   // countdown to the code's expiry
   useEffect(() => {
@@ -46,6 +60,11 @@ export default function ChallengeStep() {
     if (!photo || !catalogFile || !challenge) return;
     setBusy(true);
     setNote(null);
+    setChecks([
+      { id: "product", label: "Checking product", state: "active" },
+      { id: "code", label: "Reading code", state: "pending" },
+      { id: "live", label: "Scoring live capture", state: "pending" },
+    ]);
     try {
       const form = new FormData();
       form.append("catalog", catalogFile);
@@ -57,12 +76,25 @@ export default function ChallengeStep() {
       const res = await fetch("/api/challenge", { method: "POST", body: form });
       const match = await res.json();
       if (!res.ok) {
+        setChecks(IDLE_CHECKS);
         const msg = match?.error?.message ?? match?.error ?? "Verification failed.";
         setNote(res.status === 409 ? `${msg} Tap "Get a new code" and retake.` : msg);
         if (res.status === 409) setRemaining(0); // surface the reissue button
         return;
       }
       setMatchResult(match);
+
+      // Staged reveal — perceived streaming (real SSE is overkill at this latency).
+      setCheck("product", match.same_item ? "done" : "failed");
+      await sleep(300);
+      setCheck("code", "active");
+      await sleep(300);
+      setCheck("code", match.code_visible ? "done" : "failed");
+      await sleep(300);
+      setCheck("live", "active");
+      await sleep(300);
+      setCheck("live", match.passed ? "done" : "failed");
+      await sleep(400);
 
       // The agentic core decides what happens next.
       const trigger = useSellerStore.getState().trigger;
@@ -84,6 +116,7 @@ export default function ChallengeStep() {
           bumpAttempt();
           setNote(decision.reason + " Take a clearer live photo with the code.");
           setPhoto(null);
+          setChecks(IDLE_CHECKS);
           break;
         case "ESCALATE_HUMAN":
           setStep("review");
@@ -141,12 +174,13 @@ export default function ChallengeStep() {
               alt="live capture"
               className="mx-auto max-h-72 rounded-xl border border-white/10"
             />
+            {busy && <StreamingChecklist items={checks} />}
             <div className="flex gap-3">
               <button className="btn-ghost" onClick={() => setPhoto(null)} disabled={busy}>
                 Retake
               </button>
               <button className="btn-primary flex-1" onClick={verify} disabled={busy || expired}>
-                {busy ? "AI verifying (10–40s)…" : "Verify possession →"}
+                {busy ? "AI verifying…" : "Verify possession →"}
               </button>
             </div>
           </div>

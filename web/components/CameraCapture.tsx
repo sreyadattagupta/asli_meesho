@@ -10,6 +10,7 @@
 // upload, and they honour invariant #3 (the code stays dynamic per session).
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 
 export interface CapturedPhoto {
   blob: Blob;
@@ -100,6 +101,8 @@ export default function CameraCapture({
   const streamRef = useRef<MediaStream | null>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [flash, setFlash] = useState(false);
+  const reduce = useReducedMotion();
 
   useEffect(() => {
     let cancelled = false;
@@ -135,6 +138,8 @@ export default function CameraCapture({
   const snap = useCallback(() => {
     const video = videoRef.current;
     if (!video) return;
+    setFlash(true);
+    setTimeout(() => setFlash(false), 160);
     const canvas = document.createElement("canvas");
     canvas.width = video.videoWidth || 640;
     canvas.height = video.videoHeight || 480;
@@ -176,6 +181,53 @@ export default function CameraCapture({
         <span className="pill absolute left-3 top-3 bg-asli-pink/80 text-white">
           ● LIVE · camera only
         </span>
+
+        {/* Framing overlay: product reticle + code-slip zone (invariant #2 visual guide) */}
+        {ready && (
+          <svg
+            className="pointer-events-none absolute inset-0 h-full w-full"
+            viewBox="0 0 100 56"
+            preserveAspectRatio="none"
+            aria-hidden
+          >
+            {/* product reticle corner brackets */}
+            <g stroke="rgba(139,92,246,0.9)" strokeWidth="0.7" fill="none" strokeLinecap="round">
+              <path d="M14 10 h8 M14 10 v8" />
+              <path d="M62 10 h-8 M62 10 v8" />
+              <path d="M14 46 h8 M14 46 v-8" />
+              <path d="M62 46 h-8 M62 46 v-8" />
+            </g>
+            {/* code slip zone */}
+            <rect x="68" y="32" width="26" height="16" rx="2"
+              fill="rgba(245,158,11,0.08)" stroke="rgba(245,158,11,0.8)" strokeWidth="0.5" strokeDasharray="2 1.4" />
+            <text x="81" y="41" textAnchor="middle" fontSize="3.2" fill="rgba(245,158,11,0.95)">code slip</text>
+            <text x="38" y="29" textAnchor="middle" fontSize="3.2" fill="rgba(245,243,255,0.55)">product here</text>
+          </svg>
+        )}
+
+        {/* soft scan-line */}
+        {ready && !reduce && (
+          <motion.div
+            aria-hidden
+            className="pointer-events-none absolute inset-x-4 h-px bg-gradient-to-r from-transparent via-asli-violet/70 to-transparent"
+            animate={{ top: ["12%", "86%", "12%"] }}
+            transition={{ duration: 3.2, repeat: Infinity, ease: "linear" }}
+          />
+        )}
+
+        {/* shutter flash */}
+        <AnimatePresence>
+          {flash && (
+            <motion.div
+              aria-hidden
+              className="pointer-events-none absolute inset-0 bg-white"
+              initial={{ opacity: 0.85 }}
+              animate={{ opacity: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.16 }}
+            />
+          )}
+        </AnimatePresence>
       </div>
 
       <button className="btn-primary w-full" onClick={snap} disabled={!ready}>
