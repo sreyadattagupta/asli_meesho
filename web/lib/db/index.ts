@@ -1,4 +1,5 @@
 import { InMemoryRepo } from "./inMemoryRepo";
+import { SupabaseRepo } from "./supabaseRepo";
 import { seedRepo } from "./seed";
 import type { Repo } from "./repo";
 
@@ -8,8 +9,7 @@ let ready: Promise<void> | undefined;
 /** Singleton Repo. Serverless-safe: module scope per instance, seeded once per instance. */
 export function getRepo(): Repo {
   if (!repo) {
-    // DATA_BACKEND=supabase branch added with SupabaseRepo (Task 6).
-    repo = new InMemoryRepo();
+    repo = process.env.DATA_BACKEND === "supabase" ? new SupabaseRepo() : new InMemoryRepo();
     ready = seedRepo(repo);
   }
   return repo;
