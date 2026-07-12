@@ -1,3 +1,6 @@
+// DEMO PROVISION (CLAUDE.md §2): any signed-in user may self-select seller/buyer/admin so
+// judges can hop personas. Production would gate admin by invite and seller by KYC — this
+// endpoint would then only accept "buyer" and route the rest through admin-only grants.
 import { getSessionUser, HttpError } from "@/lib/auth";
 import { repoReady } from "@/lib/db";
 import { roleSelectSchema } from "@/lib/validation";
