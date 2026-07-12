@@ -1,8 +1,8 @@
-import Link from "next/link";
+import { LandingCta } from "@/components/LandingCta";
 
 export default function Home() {
   return (
-    <main className="mx-auto flex min-h-screen max-w-3xl flex-col items-center justify-center px-6 text-center">
+    <main className="mx-auto flex min-h-[calc(100vh-3.5rem)] max-w-3xl flex-col items-center justify-center px-6 py-12 text-center">
       <span className="pill mb-6 bg-asli-violet/15 text-asli-violet ring-1 ring-asli-violet/30">
         ✦ MULTI-AGENT TRUST LAYER
       </span>
@@ -21,9 +21,7 @@ export default function Home() {
       </p>
 
       <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
-        <Link href="/sell" className="btn-primary text-lg">
-          Start a listing →
-        </Link>
+        <LandingCta />
       </div>
 
       <div className="mt-14 grid w-full grid-cols-1 gap-3 sm:grid-cols-3">
@@ -35,6 +33,19 @@ export default function Home() {
           <div key={f.t} className="card p-5 text-left">
             <div className={`text-sm font-bold ${f.c}`}>✓ {f.t}</div>
             <div className="mt-1 text-sm text-white/50">{f.d}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-10 grid w-full grid-cols-1 gap-3 sm:grid-cols-3">
+        {[
+          { who: "Sellers", d: "Prove possession once, earn the ✓ badge, skip re-checks as trust grows." },
+          { who: "Buyers", d: "Shop listings with measured sizes and a visible “why you can trust this”." },
+          { who: "Trust & Safety", d: "Only the risky <5% escalate — with every agent's reasoning attached." },
+        ].map((p) => (
+          <div key={p.who} className="card p-5 text-left">
+            <div className="text-sm font-bold text-asli-green">{p.who}</div>
+            <div className="mt-1 text-sm text-white/50">{p.d}</div>
           </div>
         ))}
       </div>
