@@ -51,10 +51,15 @@ export default function ChallengeStep() {
       form.append("catalog", catalogFile);
       form.append("live", photo.blob, "live.jpg");
       form.append("code", challenge.code);
+      const { listingId, trigger: trig } = useSellerStore.getState();
+      if (listingId) form.append("listingId", listingId);
+      form.append("matchCount", String(trig?.matchCount ?? 0));
       const res = await fetch("/api/challenge", { method: "POST", body: form });
       const match = await res.json();
       if (!res.ok) {
-        setNote(match.error ?? "Verification failed.");
+        const msg = match?.error?.message ?? match?.error ?? "Verification failed.";
+        setNote(res.status === 409 ? `${msg} Tap "Get a new code" and retake.` : msg);
+        if (res.status === 409) setRemaining(0); // surface the reissue button
         return;
       }
       setMatchResult(match);
