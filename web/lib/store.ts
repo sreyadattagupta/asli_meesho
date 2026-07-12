@@ -32,6 +32,10 @@ export interface Challenge {
 interface SellerStore {
   step: FlowStep;
 
+  // server-side listing draft (created on flow entry; absent in signed-out demo mode)
+  listingId?: string;
+  draft: { title: string; price: number; category: "sarees" | "kurtis" | "footwear" | "jewellery" };
+
   // upload
   catalogFile?: File;
   catalogPreview?: string;
@@ -57,6 +61,8 @@ interface SellerStore {
   approved?: boolean;
 
   setStep: (step: FlowStep) => void;
+  setListingId: (id: string) => void;
+  setDraft: (d: Partial<SellerStore["draft"]>) => void;
   setCatalog: (file: File) => void;
   setTrigger: (t: Trigger) => void;
   setChallenge: (c: Challenge) => void;
@@ -121,10 +127,15 @@ export const useSessionStore = create<SessionStore>((set) => ({
 
 // ---- seller flow slice ----------------------------------------------------
 
+const initialDraft = { title: "", price: 349, category: "kurtis" as const };
+
 export const useSellerStore = create<SellerStore>((set, get) => ({
   ...initialFlow,
   attempt: 0,
+  draft: initialDraft,
   setStep: (step) => set({ step }),
+  setListingId: (listingId) => set({ listingId }),
+  setDraft: (d) => set({ draft: { ...get().draft, ...d } }),
   setCatalog: (catalogFile) => {
     const prev = get().catalogPreview;
     if (prev) URL.revokeObjectURL(prev);
@@ -151,6 +162,8 @@ export const useSellerStore = create<SellerStore>((set, get) => ({
     set({
       ...initialFlow,
       attempt: 0,
+      listingId: undefined,
+      draft: initialDraft,
       catalogFile: undefined,
       catalogPreview: undefined,
       trigger: undefined,
