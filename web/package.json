@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "vitest"
+    "test": "vitest",
+    "seed": "node --env-file=.env.local --experimental-strip-types lib/db/runSeed.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.2",
