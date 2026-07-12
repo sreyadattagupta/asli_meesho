@@ -3,7 +3,7 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { FlowStep, initialFlow, OrchestratorDecision } from "./orchestrator";
+import { FlowStep, initialFlow, OrchestratorDecision, OrchestratorAction } from "./orchestrator";
 import type { KycStatus, Role } from "./db/types";
 import type { MatchResult, MeasureResult } from "./vlmClient";
 import type { SizeChart } from "./sizing";
@@ -68,6 +68,8 @@ interface SellerStore {
   setChallenge: (c: Challenge) => void;
   setMatchResult: (r: MatchResult | undefined) => void;
   setDecision: (d: OrchestratorDecision | undefined) => void;
+  /** Apply an orchestrator decision: record it, advance to its nextStep, bump attempts on retry. */
+  applyDecision: (d: OrchestratorDecision & { action: OrchestratorAction; nextStep: FlowStep }) => void;
   bumpAttempt: () => void;
   setFlatlay: (file: File) => void;
   setMeasureResult: (r: MeasureResult) => void;
@@ -145,6 +147,11 @@ export const useSellerStore = create<SellerStore>((set, get) => ({
   setChallenge: (challenge) => set({ challenge }),
   setMatchResult: (matchResult) => set({ matchResult }),
   setDecision: (decision) => set({ decision }),
+  applyDecision: (d) => set({
+    decision: { action: d.action, requiredConfidence: d.requiredConfidence, reason: d.reason },
+    step: d.nextStep,
+    attempt: d.action === "RE_CHALLENGE" ? get().attempt + 1 : get().attempt,
+  }),
   bumpAttempt: () => set({ attempt: get().attempt + 1 }),
   setFlatlay: (flatlayFile) => {
     const prev = get().flatlayPreview;

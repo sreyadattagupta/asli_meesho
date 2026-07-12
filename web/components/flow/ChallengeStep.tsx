@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import CameraCapture, { CapturedPhoto } from "@/components/CameraCapture";
 import { StreamingChecklist } from "@/components/ui/StreamingChecklist";
 import { useSellerStore } from "@/lib/store";
-import { decide } from "@/lib/orchestrator";
+import { decide, stepForAction } from "@/lib/orchestrator";
+import type { OrchestratorDecision, OrchestratorAction, FlowStep } from "@/lib/orchestrator";
 
 type CheckState = "pending" | "active" | "done" | "failed";
 const IDLE_CHECKS: { id: string; label: string; state: CheckState }[] = [
@@ -26,7 +27,6 @@ export default function ChallengeStep() {
     setChallenge,
     setMatchResult,
     setDecision,
-    setStep,
     bumpAttempt,
   } = useSellerStore();
 
@@ -96,34 +96,45 @@ export default function ChallengeStep() {
       setCheck("live", match.passed ? "done" : "failed");
       await sleep(400);
 
-      // The agentic core decides what happens next.
-      const trigger = useSellerStore.getState().trigger;
-      const decision = decide({
-        reverseImageMatches: trigger?.matchCount ?? 0,
-        sameItem: !!match.same_item,
-        codeVisible: !!match.code_visible,
-        matchConfidence: Number(match.confidence ?? 0),
-        sellerIsNew: true, // cold-start: no trust record yet (in-memory MVP)
-        attempt,
-      });
-      setDecision(decision);
-
-      switch (decision.action) {
-        case "AUTO_APPROVE":
-          setStep("sizing");
-          break;
-        case "RE_CHALLENGE":
-          bumpAttempt();
-          setNote(decision.reason + " Take a clearer live photo with the code.");
-          setPhoto(null);
+      // The SERVER orchestrator decides from persisted signals (invariant #6).
+      // Signed-out local demo (no draft) falls back to the same pure decide() locally.
+      let decision: OrchestratorDecision & { action: OrchestratorAction; nextStep: FlowStep };
+      if (listingId) {
+        const aRes = await fetch("/api/asli/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ listingId }),
+        });
+        if (!aRes.ok) {
+          const err = await aRes.json().catch(() => null);
+          setNote(err?.error?.message ?? "Decision engine unavailable — retry.");
           setChecks(IDLE_CHECKS);
-          break;
-        case "ESCALATE_HUMAN":
-          setStep("review");
-          break;
-        case "BLOCK":
-          setStep("review"); // review screen renders the BLOCK terminal state
-          break;
+          return;
+        }
+        decision = await aRes.json();
+      } else {
+        const local = decide({
+          reverseImageMatches: trig?.matchCount ?? 0,
+          sameItem: !!match.same_item,
+          codeVisible: !!match.code_visible,
+          matchConfidence: Number(match.confidence ?? 0),
+          sellerIsNew: true, // cold-start: no trust record in signed-out demo
+          attempt,
+        });
+        decision = { ...local, nextStep: stepForAction(local.action) };
+      }
+
+      if (decision.action === "RE_CHALLENGE") {
+        setDecision(decision);
+        bumpAttempt();
+        setNote(
+          `${decision.reason} New bar: ${Math.round(decision.requiredConfidence * 100)}%. Take a clearer live photo with the code.`,
+        );
+        setPhoto(null);
+        setChecks(IDLE_CHECKS);
+        setRemaining(0); // single-use — a retry always needs a fresh code
+      } else {
+        useSellerStore.getState().applyDecision(decision);
       }
     } finally {
       setBusy(false);

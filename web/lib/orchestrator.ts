@@ -69,6 +69,19 @@ export interface OrchestratorDecision {
 
 export const MAX_ATTEMPTS = 2;
 
+/** Which flow step the UI renders after an orchestrator action. */
+export function stepForAction(a: OrchestratorAction): FlowStep {
+  switch (a) {
+    case "AUTO_APPROVE":
+      return "sizing"; // caller advances to "review" when a measurement already exists
+    case "RE_CHALLENGE":
+      return "challenge";
+    case "ESCALATE_HUMAN":
+    case "BLOCK":
+      return "review"; // review screen renders the locked/blocked terminal states
+  }
+}
+
 /**
  * Risk-adaptive confidence bar. A bare possession check needs 0.70; a new seller,
  * a heavily-reused image, or a repeat attempt each push the bar higher — so the
