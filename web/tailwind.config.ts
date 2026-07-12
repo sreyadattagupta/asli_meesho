@@ -10,13 +10,14 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        asli: {
-          violet: "#8B5CF6",
-          pink: "#EC4899",
-          amber: "#F59E0B",
-          green: "#22C55E",
-          ink: "#0B0715",
-        },
+        "meesho-pink": "#F43397",
+        "meesho-deep": "#9F2089",
+        "asli-violet": "#8B5CF6",
+        "asli-pink": "#EC4899",
+        "asli-amber": "#F59E0B",
+        "asli-green": "#22C55E",
+        "asli-red": "#EF4444",
+        "asli-ink": "#0B0715",
       },
       fontFamily: {
         sans: ["ui-sans-serif", "system-ui", "Segoe UI", "sans-serif"],
