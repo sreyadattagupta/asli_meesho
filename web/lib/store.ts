@@ -1,8 +1,10 @@
-// Zustand store — seller-flow step state (client-side).
+// Zustand stores — seller-flow, locale, and session slices (client-side).
 "use client";
 
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 import { FlowStep, initialFlow, OrchestratorDecision } from "./orchestrator";
+import type { KycStatus, Role } from "./db/types";
 import type { MatchResult, MeasureResult } from "./vlmClient";
 import type { SizeChart } from "./sizing";
 
@@ -67,6 +69,57 @@ interface SellerStore {
   setApproved: (approved: boolean) => void;
   reset: () => void;
 }
+
+// ---- locale slice (persisted — survives reloads) -------------------------
+
+interface LocaleStore {
+  locale: "en" | "hi";
+  toggleLocale: () => void;
+}
+
+export const useLocaleStore = create<LocaleStore>()(
+  persist(
+    (set, get) => ({
+      locale: (process.env.NEXT_PUBLIC_DEFAULT_LOCALE === "hi" ? "hi" : "en") as "en" | "hi",
+      toggleLocale: () => set({ locale: get().locale === "en" ? "hi" : "en" }),
+    }),
+    { name: "asli-locale" },
+  ),
+);
+
+// ---- session slice (hydrated from /api/users/me on mount) ----------------
+
+export interface SessionUser {
+  role: Role;
+  name: string;
+  sellerId?: string;
+  kycStatus?: KycStatus;
+}
+
+interface SessionStore {
+  status: "loading" | "authed" | "anon";
+  user?: SessionUser;
+  fetchSession: () => Promise<void>;
+  setUser: (user: SessionUser) => void;
+}
+
+export const useSessionStore = create<SessionStore>((set) => ({
+  status: "loading",
+  user: undefined,
+  fetchSession: async () => {
+    try {
+      const res = await fetch("/api/users/me");
+      if (!res.ok) { set({ status: "anon", user: undefined }); return; }
+      const user = (await res.json()) as SessionUser;
+      set({ status: "authed", user });
+    } catch {
+      set({ status: "anon", user: undefined });
+    }
+  },
+  setUser: (user) => set({ status: "authed", user }),
+}));
+
+// ---- seller flow slice ----------------------------------------------------
 
 export const useSellerStore = create<SellerStore>((set, get) => ({
   ...initialFlow,

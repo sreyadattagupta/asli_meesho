@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
+import { AppShell } from "@/components/AppShell";
 import { ToastProvider } from "@/components/ui/Toast";
+import { I18nProvider } from "@/lib/i18n";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -16,7 +18,11 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="font-sans antialiased">
-        <ToastProvider>{children}</ToastProvider>
+        <I18nProvider>
+          <ToastProvider>
+            <AppShell>{children}</AppShell>
+          </ToastProvider>
+        </I18nProvider>
       </body>
     </html>
   );
