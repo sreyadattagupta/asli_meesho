@@ -11,6 +11,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { useT } from "@/lib/i18n";
 
 export interface CapturedPhoto {
   blob: Blob;
@@ -97,6 +98,7 @@ export default function CameraCapture({
   code: string; // current dynamic challenge code — drawn onto the genuine fixture
   onCapture: (photo: CapturedPhoto) => void;
 }) {
+  const t = useT();
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [ready, setReady] = useState(false);
@@ -179,7 +181,7 @@ export default function CameraCapture({
           </div>
         )}
         <span className="pill absolute left-3 top-3 bg-asli-pink/80 text-white">
-          ● LIVE · camera only
+          {t("flow.challenge.cameraOnly")}
         </span>
 
         {/* Framing overlay: product reticle + code-slip zone (invariant #2 visual guide) */}
@@ -231,7 +233,7 @@ export default function CameraCapture({
       </div>
 
       <button className="btn-primary w-full" onClick={snap} disabled={!ready}>
-        📸 Capture live photo
+        {t("flow.challenge.capture")}
       </button>
 
       <div className="rounded-xl border border-dashed border-white/15 p-4">

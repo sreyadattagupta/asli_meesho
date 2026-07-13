@@ -4,14 +4,24 @@ import { useEffect, useState } from "react";
 import CameraCapture, { CapturedPhoto } from "@/components/CameraCapture";
 import { StreamingChecklist } from "@/components/ui/StreamingChecklist";
 import { useSellerStore } from "@/lib/store";
+import { useT } from "@/lib/i18n";
+import { useVoiceGuide } from "@/lib/useVoiceGuide";
 import { decide, stepForAction } from "@/lib/orchestrator";
 import type { OrchestratorDecision, OrchestratorAction, FlowStep } from "@/lib/orchestrator";
+import type { I18nKey } from "@/lib/i18n/en";
 
 type CheckState = "pending" | "active" | "done" | "failed";
-const IDLE_CHECKS: { id: string; label: string; state: CheckState }[] = [
-  { id: "product", label: "Checking product", state: "pending" },
-  { id: "code", label: "Reading code", state: "pending" },
-  { id: "live", label: "Scoring live capture", state: "pending" },
+type CheckId = "product" | "code" | "live";
+// Labels resolve through t() at render so they follow the live locale.
+const CHECK_LABEL: Record<CheckId, I18nKey> = {
+  product: "flow.challenge.checkProduct",
+  code: "flow.challenge.checkCode",
+  live: "flow.challenge.checkLive",
+};
+const IDLE_CHECKS: { id: CheckId; state: CheckState }[] = [
+  { id: "product", state: "pending" },
+  { id: "code", state: "pending" },
+  { id: "live", state: "pending" },
 ];
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -29,6 +39,8 @@ export default function ChallengeStep() {
     setDecision,
     bumpAttempt,
   } = useSellerStore();
+  const t = useT();
+  useVoiceGuide("flow.challenge.voice");
 
   const [photo, setPhoto] = useState<CapturedPhoto | null>(null);
   const [busy, setBusy] = useState(false);
@@ -36,7 +48,7 @@ export default function ChallengeStep() {
   const [note, setNote] = useState<string | null>(null);
   const [checks, setChecks] = useState(IDLE_CHECKS);
 
-  const setCheck = (id: string, state: CheckState) =>
+  const setCheck = (id: CheckId, state: CheckState) =>
     setChecks((prev) => prev.map((c) => (c.id === id ? { ...c, state } : c)));
 
   // countdown to the code's expiry
@@ -61,9 +73,9 @@ export default function ChallengeStep() {
     setBusy(true);
     setNote(null);
     setChecks([
-      { id: "product", label: "Checking product", state: "active" },
-      { id: "code", label: "Reading code", state: "pending" },
-      { id: "live", label: "Scoring live capture", state: "pending" },
+      { id: "product", state: "active" },
+      { id: "code", state: "pending" },
+      { id: "live", state: "pending" },
     ]);
     try {
       const form = new FormData();
@@ -146,17 +158,14 @@ export default function ChallengeStep() {
 
   return (
     <div className="card p-6">
-      <h2 className="text-2xl font-bold">Prove you hold it</h2>
-      <p className="mt-1 text-sm text-white/50">
-        Write today’s code on a slip of paper, place it next to the real product,
-        and take a <b>live camera photo</b>. A screenshot can’t fake this.
-      </p>
+      <h2 className="text-2xl font-bold">{t("flow.challenge.title")}</h2>
+      <p className="mt-1 text-sm text-white/50">{t("flow.challenge.subtitle")}</p>
 
       <div className="mt-5 flex flex-wrap items-center gap-4">
         <div className="rounded-2xl bg-gradient-to-br from-asli-violet to-asli-pink p-[2px]">
           <div className="rounded-2xl bg-asli-ink px-6 py-4 text-center">
             <div className="text-xs uppercase tracking-widest text-white/40">
-              Today’s code
+              {t("flow.challenge.codeLabel")}
             </div>
             <div className="font-mono text-4xl font-black tracking-[0.3em] text-white">
               {challenge.code}
@@ -165,12 +174,12 @@ export default function ChallengeStep() {
         </div>
         <div className="text-sm">
           <div className={expired ? "text-red-400" : "text-white/70"}>
-            {expired ? "Expired" : `Expires in ${remaining}s`}
+            {expired ? t("flow.challenge.expired") : t("flow.challenge.expiresIn", { s: remaining })}
           </div>
-          <div className="text-white/40">Single-use · attempt {attempt + 1}</div>
+          <div className="text-white/40">{t("flow.challenge.singleUse", { a: attempt + 1 })}</div>
           {expired && (
             <button className="btn-ghost mt-2 !py-1.5 text-xs" onClick={reissue}>
-              Get a new code
+              {t("flow.challenge.newCode")}
             </button>
           )}
         </div>
@@ -185,13 +194,17 @@ export default function ChallengeStep() {
               alt="live capture"
               className="mx-auto max-h-72 rounded-xl border border-white/10"
             />
-            {busy && <StreamingChecklist items={checks} />}
+            {busy && (
+              <StreamingChecklist
+                items={checks.map((c) => ({ ...c, label: t(CHECK_LABEL[c.id]) }))}
+              />
+            )}
             <div className="flex gap-3">
               <button className="btn-ghost" onClick={() => setPhoto(null)} disabled={busy}>
-                Retake
+                {t("flow.challenge.retake")}
               </button>
               <button className="btn-primary flex-1" onClick={verify} disabled={busy || expired}>
-                {busy ? "AI verifying…" : "Verify possession →"}
+                {busy ? t("flow.challenge.verifying") : t("flow.challenge.verify")}
               </button>
             </div>
           </div>

@@ -95,6 +95,23 @@ export const useLocaleStore = create<LocaleStore>()(
   ),
 );
 
+// ---- ui slice (persisted) --------------------------------------------------
+
+interface UiStore {
+  voiceOn: boolean;
+  toggleVoice: () => void;
+}
+
+export const useUiStore = create<UiStore>()(
+  persist(
+    (set, get) => ({
+      voiceOn: true,
+      toggleVoice: () => set({ voiceOn: !get().voiceOn }),
+    }),
+    { name: "asli-ui" },
+  ),
+);
+
 // ---- session slice (hydrated from /api/users/me on mount) ----------------
 
 export interface SessionUser {

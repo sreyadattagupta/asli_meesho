@@ -9,10 +9,13 @@ import { useLocaleStore } from "@/lib/store";
 
 export type Locale = "en" | "hi";
 
-/** Pure lookup — hi missing key ⇒ en fallback (unit-tested). */
-export function translate(locale: Locale, key: I18nKey): string {
-  if (locale === "hi") return hi[key] ?? en[key];
-  return en[key];
+export type I18nVars = Record<string, string | number>;
+
+/** Pure lookup — hi missing key ⇒ en fallback; {name} placeholders filled from vars (unit-tested). */
+export function translate(locale: Locale, key: I18nKey, vars?: I18nVars): string {
+  const raw = locale === "hi" ? hi[key] ?? en[key] : en[key];
+  if (!vars) return raw;
+  return raw.replace(/\{(\w+)\}/g, (m, name) => (name in vars ? String(vars[name]) : m));
 }
 
 const I18nContext = createContext<Locale>("en");
@@ -22,7 +25,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   return <I18nContext.Provider value={locale}>{children}</I18nContext.Provider>;
 }
 
-export function useT(): (key: I18nKey) => string {
+export function useT(): (key: I18nKey, vars?: I18nVars) => string {
   const locale = useContext(I18nContext);
-  return useCallback((key: I18nKey) => translate(locale, key), [locale]);
+  return useCallback((key: I18nKey, vars?: I18nVars) => translate(locale, key, vars), [locale]);
 }

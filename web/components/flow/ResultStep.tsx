@@ -4,6 +4,8 @@ import { useEffect, useRef } from "react";
 import { useReducedMotion } from "framer-motion";
 import { VerifiedBadge } from "@/components/ui/VerifiedBadge";
 import { useSellerStore } from "@/lib/store";
+import { useT } from "@/lib/i18n";
+import { useVoiceGuide } from "@/lib/useVoiceGuide";
 
 const CONFETTI_COLORS = ["#8B5CF6", "#EC4899", "#F59E0B", "#22C55E", "#F43397"];
 
@@ -47,6 +49,8 @@ function runConfetti(canvas: HTMLCanvasElement): () => void {
 // Step 6 — the listing goes LIVE, Asli Verified.
 export default function ResultStep() {
   const { sizeChart, catalogPreview, draft, reset } = useSellerStore();
+  const t = useT();
+  useVoiceGuide("flow.result.voice");
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const reduce = useReducedMotion();
 
@@ -63,11 +67,8 @@ export default function ResultStep() {
           ✓
         </div>
         <VerifiedBadge />
-        <h2 className="mt-4 text-3xl font-black">Your listing is live</h2>
-        <p className="mx-auto mt-2 max-w-md text-sm text-white/50">
-          Possession proven with today’s live code, size chart measured — not
-          guessed. Buyers see a listing they can trust.
-        </p>
+        <h2 className="mt-4 text-3xl font-black">{t("flow.result.title")}</h2>
+        <p className="mx-auto mt-2 max-w-md text-sm text-white/50">{t("flow.result.subtitle")}</p>
 
         <div className="mx-auto mt-6 max-w-sm overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] text-left">
           {catalogPreview && (
@@ -87,7 +88,7 @@ export default function ResultStep() {
         </div>
 
         <button className="btn-ghost mt-8" onClick={reset}>
-          List another product
+          {t("flow.result.another")}
         </button>
       </div>
     </div>

@@ -4,11 +4,12 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
-import { LogOut } from "lucide-react";
+import { LogOut, Volume2, VolumeX } from "lucide-react";
 import { LanguageToggle } from "@/components/ui/LanguageToggle";
 import { PersonaSwitcher } from "@/components/ui/PersonaSwitcher";
 import { useT } from "@/lib/i18n";
-import { useLocaleStore, useSessionStore } from "@/lib/store";
+import { useLocaleStore, useSessionStore, useUiStore } from "@/lib/store";
+import { stopSpeaking } from "@/lib/voice";
 import type { Role } from "@/lib/db/types";
 import type { ReactNode } from "react";
 
@@ -18,6 +19,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const t = useT();
   const router = useRouter();
   const { locale, toggleLocale } = useLocaleStore();
+  const { voiceOn, toggleVoice } = useUiStore();
   const { status, user, fetchSession, setUser } = useSessionStore();
 
   useEffect(() => { void fetchSession(); }, [fetchSession]);
@@ -54,6 +56,22 @@ export function AppShell({ children }: { children: ReactNode }) {
               <PersonaSwitcher current={user.role} onSwitch={(r) => void switchPersona(r)} />
             )}
             <LanguageToggle locale={locale} onToggle={toggleLocale} />
+            <button
+              aria-label={voiceOn ? t("nav.voice.on") : t("nav.voice.off")}
+              aria-pressed={voiceOn}
+              onClick={() => {
+                if (voiceOn) stopSpeaking(); // cut mid-sentence on mute
+                toggleVoice();
+              }}
+              className={[
+                "grid h-9 w-9 place-items-center rounded-full border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-asli-violet",
+                voiceOn
+                  ? "border-asli-violet/40 bg-asli-violet/15 text-asli-violet"
+                  : "border-white/10 bg-white/[0.04] text-white/40 hover:bg-white/10",
+              ].join(" ")}
+            >
+              {voiceOn ? <Volume2 className="h-4 w-4" aria-hidden /> : <VolumeX className="h-4 w-4" aria-hidden />}
+            </button>
             {status === "authed" && user ? (
               <a
                 href="/auth/logout"

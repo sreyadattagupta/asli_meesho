@@ -2,6 +2,8 @@
 
 import { useRef, useState } from "react";
 import { useSellerStore } from "@/lib/store";
+import { useT } from "@/lib/i18n";
+import { useVoiceGuide } from "@/lib/useVoiceGuide";
 
 // Step 1 — catalog upload. Gallery upload is FINE here (invariant #2 only bans it
 // on the challenge step). This is the seller's listing photo.
@@ -9,6 +11,8 @@ const CATEGORIES = ["sarees", "kurtis", "footwear", "jewellery"] as const;
 
 export default function UploadStep() {
   const { catalogPreview, draft, setDraft, setCatalog, setTrigger, setStep, setListingId } = useSellerStore();
+  const t = useT();
+  useVoiceGuide("flow.upload.voice");
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -67,24 +71,21 @@ export default function UploadStep() {
 
   return (
     <div className="card p-6">
-      <h2 className="text-2xl font-bold">Upload your catalog photo</h2>
-      <p className="mt-1 text-sm text-white/50">
-        This is your listing image. Supplier/catalog photos are welcome — sharing
-        one is normal for resellers.
-      </p>
+      <h2 className="text-2xl font-bold">{t("flow.upload.title")}</h2>
+      <p className="mt-1 text-sm text-white/50">{t("flow.upload.subtitle")}</p>
 
       <div className="mt-5 grid gap-3 sm:grid-cols-[1fr_8rem_10rem]">
         <label className="flex flex-col gap-1 text-xs font-medium text-white/50">
-          Listing title
+          {t("flow.upload.titleLabel")}
           <input
             value={draft.title}
             onChange={(e) => setDraft({ title: e.target.value })}
-            placeholder="e.g. Straight Cotton Kurti — Rose"
+            placeholder={t("flow.upload.titlePlaceholder")}
             className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5 text-sm text-white placeholder:text-white/25 focus:outline-none focus-visible:ring-2 focus-visible:ring-asli-violet"
           />
         </label>
         <label className="flex flex-col gap-1 text-xs font-medium text-white/50">
-          Price (₹)
+          {t("flow.upload.priceLabel")}
           <input
             type="number"
             min={1}
@@ -95,7 +96,7 @@ export default function UploadStep() {
           />
         </label>
         <label className="flex flex-col gap-1 text-xs font-medium text-white/50">
-          Category
+          {t("flow.upload.categoryLabel")}
           <select
             value={draft.category}
             onChange={(e) => setDraft({ category: e.target.value as (typeof CATEGORIES)[number] })}
@@ -117,7 +118,7 @@ export default function UploadStep() {
             // eslint-disable-next-line @next/next/no-img-element
             <img src={catalogPreview} alt="catalog" className="h-full w-full object-contain" />
           ) : (
-            <span className="text-sm text-white/40">Click to choose a photo</span>
+            <span className="text-sm text-white/40">{t("flow.upload.choosePhoto")}</span>
           )}
           <input
             ref={inputRef}
@@ -130,14 +131,14 @@ export default function UploadStep() {
 
         <div className="flex flex-col justify-center gap-3">
           <button className="btn-ghost" onClick={loadDemoCatalog}>
-            Use demo catalog photo
+            {t("flow.upload.demoBtn")}
           </button>
           <button
             className="btn-primary"
             disabled={!catalogPreview || draft.title.trim().length < 3 || busy}
             onClick={runCheck}
           >
-            {busy ? "Checking image…" : "Run image check →"}
+            {busy ? t("flow.upload.checking") : t("flow.upload.runCheck")}
           </button>
           {error && (
             <p role="alert" className="text-xs text-asli-red">
@@ -145,10 +146,7 @@ export default function UploadStep() {
               <button className="underline" onClick={runCheck}>Retry</button>
             </p>
           )}
-          <p className="text-xs text-white/40">
-            We reverse-image search this photo. A hit only <b>triggers</b> a live
-            proof — it never blocks you.
-          </p>
+          <p className="text-xs text-white/40">{t("flow.upload.triggerNote")}</p>
         </div>
       </div>
     </div>

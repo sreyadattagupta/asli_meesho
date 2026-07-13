@@ -1,12 +1,16 @@
 "use client";
 
 import { useSellerStore } from "@/lib/store";
+import { useT } from "@/lib/i18n";
+import { useVoiceGuide } from "@/lib/useVoiceGuide";
 
 // Step 2 — reverse-image result. TRIGGER ONLY (invariant #1). Never a verdict.
 // We name the platforms the photo was seen on (Flipkart / Myntra / Amazon /
 // Meesho / …) via Google Lens — informative, never a block.
 export default function TriggerStep() {
   const { trigger, setChallenge, setStep } = useSellerStore();
+  const t = useT();
+  useVoiceGuide("flow.trigger.voice");
 
   async function issueAndGo() {
     const res = await fetch("/api/challenge"); // GET → fresh dynamic code
@@ -25,19 +29,14 @@ export default function TriggerStep() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <span className="pill bg-asli-amber/15 text-asli-amber ring-1 ring-asli-amber/30">
-            ⚡ TRIGGER — not a verdict
+            {t("flow.trigger.pill")}
           </span>
           <h2 className="mt-3 text-2xl font-bold">
             {trigger.triggered
-              ? `This photo appears on ${trigger.matchCount} place${trigger.matchCount === 1 ? "" : "s"} online`
-              : "Photo looks original"}
+              ? t("flow.trigger.headlineSeen", { n: trigger.matchCount })
+              : t("flow.trigger.headlineClean")}
           </h2>
-          <p className="mt-1 max-w-lg text-sm text-white/50">
-            We checked this image across the web — Google, Flipkart, Myntra,
-            Amazon, Meesho and more. That’s normal for a reseller using a
-            supplier’s photo, so we don’t block you. We just ask you to prove you
-            physically hold the item.
-          </p>
+          <p className="mt-1 max-w-lg text-sm text-white/50">{t("flow.trigger.subtitle")}</p>
         </div>
         {trigger.mocked && (
           <span className="pill bg-white/5 text-white/40">demo / mock</span>
@@ -47,7 +46,7 @@ export default function TriggerStep() {
       {trigger.platforms.length > 0 && (
         <div className="mt-4">
           <div className="mb-2 text-xs uppercase tracking-wide text-white/40">
-            Seen on
+            {t("flow.trigger.seenOn")}
           </div>
           <div className="flex flex-wrap gap-2">
             {trigger.platforms.map((p) => (
@@ -72,17 +71,15 @@ export default function TriggerStep() {
           </div>
           {marketplaces.length > 0 && (
             <p className="mt-3 text-xs text-white/40">
-              Found on {marketplaces.length} marketplace
-              {marketplaces.length === 1 ? "" : "s"}
-              {otherCount > 0 ? ` + ${otherCount} other site${otherCount === 1 ? "" : "s"}` : ""}.
-              Prove possession to list it here anyway.
+              {t("flow.trigger.marketNote", { m: marketplaces.length })}
+              {otherCount > 0 ? ` (+${otherCount})` : ""}
             </p>
           )}
         </div>
       )}
 
       <button className="btn-primary mt-6" onClick={issueAndGo}>
-        Prove possession — get today’s code →
+        {t("flow.trigger.cta")}
       </button>
     </div>
   );

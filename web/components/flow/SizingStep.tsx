@@ -4,6 +4,8 @@ import { useRef, useState } from "react";
 import { Minus, Plus } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { useSellerStore } from "@/lib/store";
+import { useT } from "@/lib/i18n";
+import { useVoiceGuide } from "@/lib/useVoiceGuide";
 import { toSizeChart } from "@/lib/sizing";
 import type { SizeChart } from "@/lib/sizing";
 
@@ -18,6 +20,8 @@ export default function SizingStep() {
     setSizeChart,
     setStep,
   } = useSellerStore();
+  const t = useT();
+  useVoiceGuide("flow.sizing.voice");
   const inputRef = useRef<HTMLInputElement>(null);
   const [ref, setRef] = useState<"a4" | "tape">("a4");
   const [busy, setBusy] = useState(false);
@@ -69,13 +73,10 @@ export default function SizingStep() {
   return (
     <div className="card p-6">
       <span className="pill bg-asli-green/15 text-asli-green ring-1 ring-asli-green/30">
-        ✓ Possession proven
+        {t("flow.sizing.pill")}
       </span>
-      <h2 className="mt-3 text-2xl font-bold">Auto-build the size chart</h2>
-      <p className="mt-1 text-sm text-white/50">
-        Lay the garment flat with an <b>A4 sheet</b> (or a measuring tape) in frame
-        for scale. One photo → real centimetres, no manual entry.
-      </p>
+      <h2 className="mt-3 text-2xl font-bold">{t("flow.sizing.title")}</h2>
+      <p className="mt-1 text-sm text-white/50">{t("flow.sizing.subtitle")}</p>
 
       <div className="mt-5 grid gap-4 sm:grid-cols-2">
         <div
@@ -86,7 +87,7 @@ export default function SizingStep() {
             // eslint-disable-next-line @next/next/no-img-element
             <img src={flatlayPreview} alt="flatlay" className="h-full w-full object-contain" />
           ) : (
-            <span className="text-sm text-white/40">Click to choose flat-lay photo</span>
+            <span className="text-sm text-white/40">{t("flow.sizing.choosePhoto")}</span>
           )}
           <input
             ref={inputRef}
@@ -110,15 +111,15 @@ export default function SizingStep() {
                     : "bg-white/5 text-white/50 ring-white/10",
                 ].join(" ")}
               >
-                {r === "a4" ? "A4 sheet" : "Measuring tape"}
+                {r === "a4" ? t("flow.sizing.a4") : t("flow.sizing.tape")}
               </button>
             ))}
           </div>
           <button className="btn-ghost" onClick={loadDemoFlatlay}>
-            Use demo flat-lay photo
+            {t("flow.sizing.demoBtn")}
           </button>
           <button className="btn-primary" disabled={!flatlayPreview || busy} onClick={measure}>
-            {busy ? "Measuring (10–40s)…" : "Measure & auto-fill →"}
+            {busy ? t("flow.sizing.measuring") : t("flow.sizing.measure")}
           </button>
           {err && (
             <p role="alert" className="text-xs text-asli-red">
@@ -131,14 +132,14 @@ export default function SizingStep() {
       {sizeChart && (
         <div className="mt-6 rounded-xl border border-asli-green/20 bg-asli-green/[0.04] p-4">
           <div className="flex items-center justify-between gap-3">
-            <Badge variant="verified">Measured, not guessed</Badge>
+            <Badge variant="verified">{t("flow.sizing.measuredBadge")}</Badge>
             <span className="text-2xl font-black">{sizeChart.size}</span>
           </div>
           <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
             {([
-              { key: "chestCm", label: "Chest" },
-              { key: "lengthCm", label: "Length" },
-              { key: "waistCm", label: "Waist" },
+              { key: "chestCm", label: t("flow.sizing.chest") },
+              { key: "lengthCm", label: t("flow.sizing.length") },
+              { key: "waistCm", label: t("flow.sizing.waist") },
             ] as const).map(({ key, label }) => (
               <div key={key} className="flex items-center justify-between rounded-lg bg-white/[0.04] px-3 py-2">
                 <span className="text-xs uppercase tracking-wide text-white/40">{label}</span>
@@ -163,7 +164,7 @@ export default function SizingStep() {
             ))}
           </div>
           <button className="btn-primary mt-4 w-full" onClick={() => setStep("review")}>
-            Looks right — continue to review →
+            {t("flow.sizing.continue")}
           </button>
         </div>
       )}
