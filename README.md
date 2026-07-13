@@ -141,12 +141,19 @@ AUTH_TEST_BYPASS=1 npm run dev
 ### 2. VLM service (optional — real local vision)
 
 ```bash
-ollama pull qwen2.5vl                  # CPU-only fallback: ollama pull moondream
+ollama pull qwen2.5vl:3b               # tiny CPU fallback: ollama pull moondream
 ollama serve
-cd vlm-service && pip install -r requirements.txt && uvicorn main:app --reload --port 8000
+cd vlm-service && pip install -r requirements.txt
+OLLAMA_MODEL=qwen2.5vl:3b OLLAMA_NUM_GPU=0 python -m uvicorn main:app --port 8000
 # then run the web app with VLM_PROVIDER=ollama VLM_SERVICE_URL=http://localhost:8000
 curl http://localhost:8000/health
 ```
+
+> **`OLLAMA_NUM_GPU=0`** forces CPU inference. Set it if image inference returns HTTP 500 with
+> *"CUDA error: a PTX JIT compilation failed"* — some GPUs run text but not the vision path.
+> The local `/vlm/match` extracts garment attributes per image then compares deterministically, and
+> `/vlm/measure` grounds bounding boxes and computes cm via single-view metrology — both reliable on
+> the 3B model where one-shot cross-image reasoning is not.
 
 For the Qdrant embedding trigger (local full demo): `python index_catalog.py` once (uvicorn stopped),
 then run the web app with `TRIGGER_SOURCE=qdrant`. Falls back to perceptual hashing if torch wheels are

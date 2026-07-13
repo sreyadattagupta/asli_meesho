@@ -14,10 +14,25 @@ with _PROMPTS_PATH.open(encoding="utf-8") as _f:
 
 
 def match_prompt(code: str) -> str:
-    """Agent 1 — Possession-Proof. Substitute the live challenge code."""
+    """Agent 1 — Possession-Proof (composite/2-image prompt; used by the Gemini provider)."""
     return _PROMPTS["match_prompt"].replace("{{code}}", code)
 
 
+def describe_catalog_prompt() -> str:
+    """Agent 1 (local decomposition) — extract catalog garment attributes from ONE image."""
+    return _PROMPTS["describe_catalog_prompt"]
+
+
+def describe_live_prompt(code: str) -> str:
+    """Agent 1 (local decomposition) — extract live garment attributes + slip code from ONE image."""
+    return _PROMPTS["describe_live_prompt"].replace("{{code}}", code)
+
+
 def measure_prompt(reference_object: str) -> str:
-    """Agent 2 — Smart Sizing. Substitute the reference object type."""
+    """Agent 2 — Smart Sizing (direct-cm prompt; used by the Gemini provider)."""
     return _PROMPTS["measure_prompt"].replace("{{reference}}", reference_object)
+
+
+def measure_boxes_prompt(reference_object: str) -> str:
+    """Agent 2 (local metrology) — bounding boxes for reference + garment; cm computed in Python."""
+    return _PROMPTS["measure_boxes_prompt"].replace("{{reference}}", reference_object)
