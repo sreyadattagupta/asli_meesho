@@ -2,6 +2,17 @@ import { requireRole, HttpError } from "@/lib/auth";
 import { repoReady } from "@/lib/db";
 import { listingCreateSchema } from "@/lib/validation";
 import { fail, ok } from "@/lib/api";
+import { buildFeed } from "@/lib/feed";
+
+/** Marketplace feed — live listings only, verified-first (simulated PRISM-style boost). Public. */
+export async function GET(req: Request) {
+  try {
+    const filter = new URL(req.url).searchParams.get("filter");
+    return ok({ listings: await buildFeed(filter) });
+  } catch {
+    return fail(500, "internal", "Something went wrong.");
+  }
+}
 
 /** Create a listing draft — the seller flow's entry point. */
 export async function POST(req: Request) {
