@@ -107,3 +107,28 @@ async def vlm_measure(
         raise HTTPException(502, f"VLM error: {e}") from e
 
     return result
+
+
+@app.post("/vlm/embed")
+async def vlm_embed(image: UploadFile = File(..., description="Image to embed")):
+    """Embedding for the Qdrant TRIGGER source — CLIP vector or perceptual-hash bits."""
+    data = await _read(image, "image")
+    try:
+        import embed  # imported lazily so /match /measure work even if the embed stack is absent
+        return embed.embed_vector(data)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(503, f"embed unavailable: {e}") from e
+
+
+@app.post("/vlm/similar")
+async def vlm_similar(
+    image: UploadFile = File(..., description="Query image"),
+    top_k: int = Form(5),
+):
+    """Similarity search over the local Qdrant catalog. TRIGGER only (invariant #1)."""
+    data = await _read(image, "image")
+    try:
+        import embed
+        return {"matches": embed.similar(data, top_k=top_k), "method": embed.method()}
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(503, f"similar unavailable: {e}") from e

@@ -1,5 +1,6 @@
 import { requireRole, HttpError } from "@/lib/auth";
 import { fail, ok } from "@/lib/api";
+import { vlmDegraded } from "@/lib/vlm/provider";
 
 export interface AgentMonitor {
   vlmProvider: "gemini" | "ollama" | "mock";
@@ -38,8 +39,8 @@ export async function GET() {
       }
     }
 
-    // `degraded` is set by the provider seam's fallback (Task 5.5); mock provider is degraded by definition.
-    const degraded = vlmProvider === "mock" || !vlmHealthy;
+    // `degraded` is set by the provider seam's fallback (withDegradation); mock is degraded by definition.
+    const degraded = vlmProvider === "mock" || vlmDegraded() || !vlmHealthy;
 
     return ok<AgentMonitor>({ vlmProvider, vlmHealthy, vlmLatencyMs, triggerSource, dataBackend, degraded });
   } catch (e) {

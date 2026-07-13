@@ -1,6 +1,6 @@
 "use client";
 
-import { useSellerStore } from "@/lib/store";
+import { useSellerStore, useSessionStore } from "@/lib/store";
 import { useT } from "@/lib/i18n";
 import { useVoiceGuide } from "@/lib/useVoiceGuide";
 
@@ -8,11 +8,34 @@ import { useVoiceGuide } from "@/lib/useVoiceGuide";
 // We name the platforms the photo was seen on (Flipkart / Myntra / Amazon /
 // Meesho / …) via Google Lens — informative, never a block.
 export default function TriggerStep() {
-  const { trigger, setChallenge, setStep } = useSellerStore();
+  const { trigger, setChallenge, setStep, listingId } = useSellerStore();
+  const sellerId = useSessionStore((s) => s.user?.sellerId);
   const t = useT();
   useVoiceGuide("flow.trigger.voice");
 
   async function issueAndGo() {
+    // Risk Radar fast lane: a trusted seller skips the live challenge entirely. We only run the
+    // orchestrator early for eligible sellers — otherwise it would block a seller with no proof yet.
+    if (sellerId && listingId) {
+      try {
+        const rr = await fetch("/api/agents/risk-radar/score", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sellerId }),
+        });
+        if (rr.ok && (await rr.json()).fastLaneEligible) {
+          const aRes = await fetch("/api/asli/analyze", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ listingId }),
+          });
+          if (aRes.ok) {
+            useSellerStore.getState().applyDecision(await aRes.json());
+            return;
+          }
+        }
+      } catch {
+        // fall through to the standard challenge path
+      }
+    }
     const res = await fetch("/api/challenge"); // GET → fresh dynamic code
     const challenge = await res.json();
     setChallenge(challenge);

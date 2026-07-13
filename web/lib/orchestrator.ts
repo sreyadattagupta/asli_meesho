@@ -98,8 +98,18 @@ export function requiredConfidence(
 }
 
 /** The agentic core: turn raw agent signals into the next action. */
-export function decide(s: AgentSignals): OrchestratorDecision {
+export function decide(s: AgentSignals, opts?: { fastLane?: boolean }): OrchestratorDecision {
   const bar = requiredConfidence(s);
+
+  // Risk Radar fast lane: a trusted seller skips the live challenge entirely. Runs BEFORE the
+  // possession gate because their possession signals may not exist yet (challenge was skipped).
+  if (opts?.fastLane) {
+    return {
+      action: "AUTO_APPROVE",
+      requiredConfidence: bar,
+      reason: "Trusted seller fast lane (score ≥ 85, KYC verified).",
+    };
+  }
 
   // Wrong item is never recoverable by retrying — block outright.
   if (!s.sameItem && s.matchConfidence <= 0.2) {

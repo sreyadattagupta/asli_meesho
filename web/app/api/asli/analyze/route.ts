@@ -4,7 +4,10 @@ import { repoReady } from "@/lib/db";
 import { decide, stepForAction } from "@/lib/orchestrator";
 import type { AgentSignals, OrchestratorAction } from "@/lib/orchestrator";
 import type { FlowStep } from "@/lib/orchestrator";
+import { scoreSeller, type SellerSignals } from "@/lib/engines/riskRadar";
 import { fail, ok } from "@/lib/api";
+
+const DAY = 86_400_000;
 
 export interface AnalyzeResponse {
   action: OrchestratorAction;
@@ -36,7 +39,19 @@ export async function POST(req: Request) {
       sellerIsNew: seller.isNew,
       attempt: Math.max(0, possession.length - 1),
     };
-    const decision = decide(signals);
+
+    // Risk Radar fast lane: a trusted seller with no challenge attempt yet skips it entirely.
+    const events = await repo.listTrustEvents(seller.id);
+    const nowMs = Date.now();
+    const riskSignals: SellerSignals = {
+      passes: seller.passes, fails: seller.fails, isNew: seller.isNew,
+      kycVerified: seller.kycStatus === "verified", imageReuseCount: signals.reverseImageMatches,
+      recentEvents: events.map((e) => ({ delta: e.delta, ageDays: (nowMs - Date.parse(e.createdAt)) / DAY })),
+    };
+    const risk = scoreSeller(riskSignals);
+    const fastLane = risk.fastLaneEligible && possession.length === 0;
+
+    const decision = decide(signals, { fastLane });
     await repo.addCheck({
       listingId, agent: "orchestrator",
       payload: { signals } as unknown as Record<string, unknown>,
@@ -58,8 +73,8 @@ export async function POST(req: Request) {
     const nextStep: FlowStep =
       decision.action === "AUTO_APPROVE" && measurement ? "review" : stepForAction(decision.action);
     return ok<AnalyzeResponse>({
-      ...decision, trustScore: seller.trustScore, nextStep,
-      agentResults: { possession: last?.payload ?? null },
+      ...decision, trustScore: risk.trustScore, nextStep,
+      agentResults: { possession: last?.payload ?? null, fastLane, riskBand: risk.band },
     });
   } catch (e) {
     if (e instanceof HttpError) return fail(e.status, e.code, e.message);

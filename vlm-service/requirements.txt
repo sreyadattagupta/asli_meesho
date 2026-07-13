@@ -3,3 +3,9 @@ uvicorn[standard]>=0.34
 python-multipart>=0.0.20
 httpx>=0.28
 Pillow>=11.3
+# Qdrant TRIGGER source (embedding similarity). Local mode via qdrant-client(path=...).
+qdrant-client>=1.12
+# Perceptual-hash fallback when torch/CLIP wheels are unavailable (e.g. Python 3.14).
+ImageHash>=4.3
+# Optional CLIP upgrade — install manually if torch wheels are available on your platform:
+#   pip install torch transformers

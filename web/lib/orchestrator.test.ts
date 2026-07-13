@@ -33,3 +33,17 @@ describe("stepForAction", () => {
     expect(stepForAction("BLOCK")).toBe("review");
   });
 });
+
+describe("decide — fast lane (Task 5.4)", () => {
+  it("eligible seller auto-approves before the possession gate", () => {
+    // Even with no valid possession signals, a fast-lane seller is approved.
+    const noProof = { ...base, sameItem: false, codeVisible: false, matchConfidence: 0 };
+    const d = decide(noProof, { fastLane: true });
+    expect(d.action).toBe("AUTO_APPROVE");
+    expect(d.reason).toMatch(/fast lane/i);
+  });
+  it("ineligible path is unchanged when fastLane is false", () => {
+    expect(decide(base, { fastLane: false }).action).toBe("AUTO_APPROVE");
+    expect(decide({ ...base, sameItem: false, matchConfidence: 0.1 }, { fastLane: false }).action).toBe("BLOCK");
+  });
+});

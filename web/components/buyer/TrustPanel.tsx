@@ -13,7 +13,11 @@ const BAND_LABEL = { high: "High-trust seller", medium: "Established seller", lo
 export function TrustPanel({ bundle }: { bundle: ListingBundle }) {
   const [open, setOpen] = useState(false);
   const reduce = useReducedMotion();
-  const { listing, checks, measurement, trustBand, promiseArmed } = bundle;
+  const { listing, checks, measurement, trustBand, promiseArmed, decision } = bundle;
+  const verdictColor = {
+    verified: "text-asli-green", blocked: "text-asli-red",
+    escalated: "text-asli-amber", pending: "text-asli-violet",
+  }[decision.verdict];
 
   const possession = checks.filter((c) => c.agent === "possession").at(-1);
   const sizeConfidence = measurement?.confidence ?? (listing.sizeChart ? 0.9 : undefined);
@@ -43,6 +47,13 @@ export function TrustPanel({ bundle }: { bundle: ListingBundle }) {
             transition={{ duration: 0.25, ease: "easeOut" }}
           >
             <div className="space-y-1 border-t border-white/10 px-4 py-3">
+              <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg bg-white/[0.04] px-3 py-2 text-xs">
+                <span className="font-semibold text-white/50">Unified Decision Engine:</span>
+                <span className={`font-bold capitalize ${verdictColor}`}>{decision.verdict}</span>
+                <span className="text-white/40">
+                  · trust {decision.trustScore}/100 · {decision.asliVerified ? "✓ Asli Verified" : "not yet verified"}
+                </span>
+              </div>
               {possession ? (
                 <AgentReasonRow
                   icon={Camera}

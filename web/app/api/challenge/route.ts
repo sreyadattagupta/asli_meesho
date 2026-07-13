@@ -4,6 +4,7 @@ import { repoReady } from "@/lib/db";
 import { vlmMatch } from "@/lib/vlmClient";
 import { fail, ok } from "@/lib/api";
 import { rateLimited } from "@/lib/rateLimit";
+import { exifFreshness } from "@/lib/engines/exif";
 
 const TTL_SECONDS = Number(process.env.CHALLENGE_TTL_SECONDS ?? 300);
 // No ambiguous chars (0/O, 1/I) — hand-writeable, VLM-readable.
@@ -50,8 +51,14 @@ export async function POST(req: Request) {
 
     const result = await vlmMatch(catalog, live, code);
 
+    // EXIF freshness — advisory only (strippable ⇒ never a lone gate, invariant #6). Nudges the
+    // recorded confidence up for a fresh live capture, down for a stale one.
+    const liveArrBuf = await live.arrayBuffer();
+    const exif = exifFreshness(liveArrBuf);
+    const adjustedConfidence = Math.min(1, Math.max(0, result.confidence + exif.weight));
+
     if (listingId) {
-      const liveBuf = Buffer.from(await live.arrayBuffer());
+      const liveBuf = Buffer.from(liveArrBuf);
       const imageHash = crypto.createHash("sha256").update(liveBuf).digest("hex");
       await repo.addImage({
         listingId,
@@ -62,8 +69,8 @@ export async function POST(req: Request) {
       await repo.addCheck({
         listingId,
         agent: "possession",
-        payload: { ...result, matchCount } as unknown as Record<string, unknown>,
-        confidence: result.confidence,
+        payload: { ...result, matchCount, exif } as unknown as Record<string, unknown>,
+        confidence: adjustedConfidence,
         action: "recorded",
         requiredConfidence: 0, // the orchestrator sets the bar in /api/asli/analyze
         reason: result.reason,
