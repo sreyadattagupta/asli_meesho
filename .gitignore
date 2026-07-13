@@ -13,3 +13,8 @@ my-video/
 Screenshot*.png
 asli-*.png
 test-results/
+
+# internal build docs (kept local, not in repo)
+CLAUDE.md
+AGENTS.md
+docs/
