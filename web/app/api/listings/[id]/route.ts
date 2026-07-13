@@ -1,5 +1,5 @@
-import { repoReady } from "@/lib/db";
 import { fail, ok } from "@/lib/api";
+import { getListingBundle } from "@/lib/listing";
 
 /** Listing bundle: listing + images + agent checks + measurement + seller trust. */
 export async function GET(
@@ -8,20 +8,9 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const repo = await repoReady();
-    const listing = await repo.getListing(id);
-    if (!listing) return fail(404, "not_found", "Listing not found.");
-    const [images, checks, measurement, seller] = await Promise.all([
-      repo.listImages(id),
-      repo.listChecks(id),
-      repo.getMeasurement(id),
-      repo.getSeller(listing.sellerId),
-    ]);
-    return ok({
-      listing, images, checks, measurement,
-      trustScore: seller?.trustScore ?? 0,
-      trustBand: seller?.trustBand ?? "low",
-    });
+    const bundle = await getListingBundle(id);
+    if (!bundle) return fail(404, "not_found", "Listing not found.");
+    return ok(bundle);
   } catch {
     return fail(500, "internal", "Something went wrong.");
   }
