@@ -3,7 +3,14 @@ import { auth0, authConfigured } from "./lib/auth0";
 
 const AUTHED = [/^\/sell/, /^\/admin/, /^\/checkout/, /^\/orders/, /^\/onboarding/];
 
+// Strictly-gated E2E/demo bypass — never active in production; requires the flag AND an explicit
+// x-test-role (header for Playwright, cookie for manual use). Mirrors lib/auth.ts getSessionUser.
+const BYPASS = process.env.AUTH_TEST_BYPASS === "1" && process.env.NODE_ENV !== "production";
+
 export async function middleware(req: NextRequest) {
+  if (BYPASS && (req.headers.get("x-test-role") ?? req.cookies.get("x-test-role")?.value)) {
+    return NextResponse.next(); // authenticated by the test bypass
+  }
   // Tenant env not filled yet — degrade to signed-out instead of hard-failing every request.
   if (!authConfigured) return NextResponse.next();
 

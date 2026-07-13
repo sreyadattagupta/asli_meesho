@@ -7,6 +7,9 @@ __pycache__/
 *.local
 qdrant_data/
 .playwright-mcp/
+playwright-report/
+blob-report/
+playwright/.cache/
 my-video/
 *.pptx
 *.xlsx

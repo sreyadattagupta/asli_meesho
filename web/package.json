@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "test": "vitest",
+    "e2e": "playwright test",
     "seed": "node --env-file=.env.local --experimental-strip-types lib/db/runSeed.ts"
   },
   "dependencies": {
@@ -24,6 +25,7 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@types/node": "22.10.5",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
