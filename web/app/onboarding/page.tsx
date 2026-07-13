@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Card } from "@/components/ui/Card";
 import { useToast } from "@/components/ui/Toast";
+import { KycOnboarding } from "@/components/seller/KycOnboarding";
 import { useT } from "@/lib/i18n";
 import { fadeSlideUp, staggerChildren } from "@/lib/motion";
 import { useSessionStore } from "@/lib/store";
@@ -28,6 +29,7 @@ export default function OnboardingPage() {
   const { toast } = useToast();
   const { user, setUser } = useSessionStore();
   const [busy, setBusy] = useState<Role | null>(null);
+  const [phase, setPhase] = useState<"role" | "kyc">("role");
 
   const pick = async (role: Role) => {
     setBusy(role);
@@ -44,6 +46,8 @@ export default function OnboardingPage() {
       }
       const body = (await res.json()) as { user: { role: Role; name: string; sellerId?: string } };
       setUser({ ...(user ?? { name: body.user.name }), role: body.user.role, name: body.user.name, sellerId: body.user.sellerId });
+      // Sellers complete KYC before entering the flow; buyers/admins go straight to their home.
+      if (role === "seller") { setPhase("kyc"); return; }
       router.push(roleHome[role]);
     } catch {
       toast({ kind: "error", message: t("state.error") });
@@ -51,6 +55,18 @@ export default function OnboardingPage() {
       setBusy(null);
     }
   };
+
+  if (phase === "kyc") {
+    return (
+      <main className="mx-auto flex min-h-[calc(100vh-3.5rem)] max-w-xl flex-col justify-center gap-6 px-4 py-10">
+        <div>
+          <h1 className="text-2xl font-black tracking-tight">One more step</h1>
+          <p className="mt-1 text-sm text-white/60">Verify your shop to unlock listing.</p>
+        </div>
+        <KycOnboarding onDone={() => router.push("/sell")} />
+      </main>
+    );
+  }
 
   return (
     <main className="mx-auto flex min-h-[calc(100vh-3.5rem)] max-w-xl flex-col justify-center gap-6 px-4 py-10">

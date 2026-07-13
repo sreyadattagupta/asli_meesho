@@ -48,6 +48,9 @@ export class InMemoryRepo implements Repo {
   async getSeller(id: string): Promise<Seller | null> {
     return this.sellers.get(id) ?? null;
   }
+  async listSellers(): Promise<Seller[]> {
+    return [...this.sellers.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
   async createSeller(s: Omit<Seller, "id" | "createdAt">): Promise<Seller> {
     const seller: Seller = { ...s, id: newId(), createdAt: now() };
     this.sellers.set(seller.id, seller);

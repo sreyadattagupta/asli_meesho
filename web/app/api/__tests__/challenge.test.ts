@@ -16,7 +16,8 @@ vi.mock("@/lib/vlmClient", () => ({
   })),
 }));
 
-import { GET, POST, __resetRateLimiter } from "@/app/api/challenge/route";
+import { GET, POST } from "@/app/api/challenge/route";
+import { resetRateLimiter } from "@/lib/rateLimit";
 import { repoReady } from "@/lib/db";
 
 function verifyReq(code: string, listingId?: string): Request {
@@ -43,7 +44,7 @@ async function makeListing(): Promise<string> {
 }
 
 describe("challenge routes (invariant #3)", () => {
-  beforeEach(() => __resetRateLimiter());
+  beforeEach(() => resetRateLimiter());
 
   it("GET issues a persisted, claimable code", async () => {
     const res = await GET();

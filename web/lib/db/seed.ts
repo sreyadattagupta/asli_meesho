@@ -75,6 +75,20 @@ export async function seedRepo(repo: Repo): Promise<void> {
         confidence: 0.96, action: "AUTO_APPROVE", requiredConfidence: 0.7,
         reason: "Possession proven against live challenge code (seed).",
       });
+      // The orchestrator's own decision record — powers the audit trail + escalation-rate metric.
+      await repo.addCheck({
+        listingId: listing.id, agent: "orchestrator",
+        payload: { signals: { sameItem: true, codeVisible: true, matchConfidence: 0.96 }, seeded: true },
+        confidence: 0.96, action: "AUTO_APPROVE", requiredConfidence: 0.7,
+        reason: "Above the required bar — auto-approved (seed).",
+      });
+    } else if (item.status === "blocked") {
+      await repo.addCheck({
+        listingId: listing.id, agent: "orchestrator",
+        payload: { signals: { sameItem: false, matchConfidence: 0.14 }, seeded: true },
+        confidence: 0.14, action: "BLOCK", requiredConfidence: 0.8,
+        reason: "Possession not proven — listing blocked (seed).",
+      });
     }
   }
 
@@ -86,6 +100,12 @@ export async function seedRepo(repo: Repo): Promise<void> {
       payload: { same_item: true, code_visible: false, matchCount: 9, seeded: true },
       confidence: 0.58, action: "ESCALATE_HUMAN", requiredConfidence: 0.8,
       reason: "Challenge code unreadable after max attempts; needs human review.",
+    });
+    await repo.addCheck({
+      listingId: listing.id, agent: "orchestrator",
+      payload: { signals: { sameItem: true, codeVisible: false, matchConfidence: 0.58 }, seeded: true },
+      confidence: 0.58, action: "ESCALATE_HUMAN", requiredConfidence: 0.8,
+      reason: "Below bar after max attempts — escalated to a human (seed).",
     });
     await repo.createReview({ listingId: listing.id, status: "pending" });
     await repo.appendAudit({

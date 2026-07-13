@@ -189,6 +189,9 @@ export class SupabaseRepo implements Repo {
   getSeller(id: string) {
     return this.maybe(this.sb.from("sellers").select().eq("id", id).maybeSingle(), sellerFromDb);
   }
+  listSellers() {
+    return this.many(this.sb.from("sellers").select().order("created_at"), sellerFromDb);
+  }
   createSeller(s: Omit<Seller, "id" | "createdAt">) {
     return this.one(this.sb.from("sellers").insert(sellerToDb(s)).select().single(), sellerFromDb);
   }

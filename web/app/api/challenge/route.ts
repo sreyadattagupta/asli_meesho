@@ -3,24 +3,11 @@ import { getSessionUser } from "@/lib/auth";
 import { repoReady } from "@/lib/db";
 import { vlmMatch } from "@/lib/vlmClient";
 import { fail, ok } from "@/lib/api";
+import { rateLimited } from "@/lib/rateLimit";
 
 const TTL_SECONDS = Number(process.env.CHALLENGE_TTL_SECONDS ?? 300);
 // No ambiguous chars (0/O, 1/I) — hand-writeable, VLM-readable.
 const ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
-
-// Simple per-seller issue throttle: >5 codes per 60 s ⇒ 429.
-const issueLog = new Map<string, number[]>();
-export function __resetRateLimiter(): void {
-  issueLog.clear();
-}
-
-function rateLimited(key: string): boolean {
-  const now = Date.now();
-  const recent = (issueLog.get(key) ?? []).filter((t) => now - t < 60_000);
-  recent.push(now);
-  issueLog.set(key, recent);
-  return recent.length > 5;
-}
 
 // GET: issue a fresh dynamic code, persisted for the atomic single-use claim (invariant #3).
 export async function GET() {

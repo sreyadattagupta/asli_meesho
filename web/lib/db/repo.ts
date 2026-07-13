@@ -13,6 +13,7 @@ export interface Repo {
   listUsers(): Promise<User[]>;
   // sellers
   getSeller(id: string): Promise<Seller | null>;
+  listSellers(): Promise<Seller[]>;
   createSeller(s: Omit<Seller, "id" | "createdAt">): Promise<Seller>;
   updateSeller(id: string, patch: Partial<Seller>): Promise<Seller>;
   // listings
