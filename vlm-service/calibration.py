@@ -54,6 +54,19 @@ def instance_item_strength(
     return round(_clamp01(base), 4)
 
 
+def same_item_strength(gate_score: float, threshold: float) -> float:
+    """Agent 1 — map the CLIP same-item gate cosine to same-instance evidence in [0,1].
+
+    gate_score  CLIP/max cosine (clip_embed) between catalog and live.
+    threshold   the calibrated pass bar Tc (data-tuned, ~0.90 at the balanced operating point).
+
+    Centred just below Tc so a bar-clearing capture reads as a solid ~0.65 evidence and a clear match
+    saturates, while a below-bar score decays toward 0. Monotone in gate_score, bounded to [0,1].
+    Deliberately CLIP-scaled (not the old crop-cosine calibration): the gate is now CLIP, not DINOv2.
+    """
+    return round(_clamp01(_sigmoid(14.0 * (gate_score - (threshold - 0.05)))), 4)
+
+
 def possession_confidence(
     item_strength: float, code_match: float, exif_weight: float = 0.0, blur_ok: bool = True
 ) -> float:

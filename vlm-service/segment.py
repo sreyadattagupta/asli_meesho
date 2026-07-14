@@ -41,12 +41,17 @@ def _encode(img: Image.Image) -> bytes:
     return buf.getvalue()
 
 
-def segment_garment(data: bytes) -> dict:
-    """Return {bytes, method, fg_frac} — the garment crop (background zeroed) or the whole image.
+def segment_garment(data: bytes, zero_bg: bool = True) -> dict:
+    """Return {bytes, method, fg_frac} — the garment crop or the whole image.
 
     method: "grabcut" when a plausible garment mask was found and cropped to; "whole" when GrabCut
     collapsed / OpenCV is absent (the image is used unchanged). fg_frac is the foreground fraction
     GrabCut assigned (−1.0 when it could not run) — an explainability signal, never a lone gate.
+
+    zero_bg: True zeroes the background inside the bbox to black — right for CLIP (background-
+    sensitive, keys on shape). False keeps the natural pixels inside the bbox — right for DINOv2,
+    which is background-robust and whose features degrade on out-of-distribution black-matted inputs
+    (measured: zeroing compressed DINOv2 same-instance cosine and produced degenerate embeddings).
     """
     img = _open(data)
     img.thumbnail((_MAX_SIDE, _MAX_SIDE))
@@ -77,7 +82,9 @@ def segment_garment(data: bytes) -> dict:
 
     ys, xs = np.where(fg > 0)
     y0, y1, x0, x1 = ys.min(), ys.max() + 1, xs.min(), xs.max() + 1
-    crop = a[y0:y1, x0:x1] * fg[y0:y1, x0:x1][:, :, None]  # zero the background inside the bbox
+    crop = a[y0:y1, x0:x1]
+    if zero_bg:
+        crop = crop * fg[y0:y1, x0:x1][:, :, None]  # zero the background inside the bbox (CLIP path)
     return {"bytes": _encode(Image.fromarray(crop)), "method": "grabcut", "fg_frac": round(frac, 3)}
 
 

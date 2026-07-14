@@ -3,3 +3,8 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+# one-time ONNX-export toolchain venv (torch/transformers) — never shipped
+.venv-export/
+# transient eval artifacts (the committed model.onnx + *_calibration.json ARE tracked)
+models/eval_cache_*.pkl
+models/*.log

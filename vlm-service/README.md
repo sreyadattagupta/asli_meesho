@@ -12,11 +12,27 @@ license: apache-2.0
 # Asli Meesho — CV / VLM service
 
 Self-hosted FastAPI service behind the four Asli agents. It owns the **deterministic computer
-vision** — CLIP image-embedding cosine (same-item / delivery identity), single-view **homography
-metrology** (garment cm from an A4/tape reference), **PaddleOCR** code-slip verification, and
-image quality / anti-spoof gates — plus **calibrated confidence** for every agent. Generative
+vision** — the Agent-1 **same-item gate** (CLIP ViT-B/32 served via **ONNX**, no torch), single-view
+**homography metrology** (garment cm from an A4/tape reference), **PaddleOCR** code-slip verification,
+and image quality / anti-spoof gates — plus **calibrated confidence** for every agent. Generative
 vision-language reads are backend-switchable (`VLM_BACKEND`): local **Ollama + Qwen2.5-VL**, or
 **Gemini 2.0 Flash** on this CPU Space (no GPU needed).
+
+### Agent-1 same-item gate (Live Proof)
+
+The possession same-item decision matches the seller's catalog photo to the live capture. It is a
+**CLIP/max cosine gate** (whole-frame + garment-crop, max-fused for clutter robustness), served
+through **ONNX Runtime** so the identical path runs on the local Python 3.14 box *and* the Python 3.11
+CPU Space with **no torch at serve time**. Thresholds are **data-calibrated** on
+`Marqo/deepfashion-inshop` (`scripts/eval_matcher.py`) at a balanced operating point and validated on
+the committed real fixtures — see `models/same_item_calibration.json`.
+
+**DINOv2-small is also served (as ONNX) but reported as evidence only, not gating.** We evaluated it
+head-to-head against CLIP: contrary to the instance-retrieval literature, DINOv2 did **not** beat CLIP
+on this task, and *no* single embedding separates same-category+same-colour look-alikes — that
+adversarial case is deferred to the challenge code, reuse/liveness detection and human review, which
+the possession proof always combined. The ONNX artifacts are produced once by
+`scripts/export_dinov2_onnx.py` / `scripts/export_clip_onnx.py` (torch only at export time).
 
 ## Endpoints
 

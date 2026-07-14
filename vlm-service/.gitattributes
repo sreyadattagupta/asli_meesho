@@ -1,0 +1,7 @@
+# Agent-1 same-item ONNX backbones are large binary weights — track with git-lfs so the app repo
+# stays lean and HF Spaces (which support LFS natively) resolve them at build time. If you prefer not
+# to commit weights at all, delete these lines and re-generate the models in your build/deploy step
+# with scripts/export_dinov2_onnx.py + scripts/export_clip_onnx.py (needs torch+transformers once),
+# or point DINOV2_ONNX_PATH / CLIP_ONNX_PATH at a downloaded copy.
+models/**/*.onnx filter=lfs diff=lfs merge=lfs -text
+models/**/*.onnx.data filter=lfs diff=lfs merge=lfs -text

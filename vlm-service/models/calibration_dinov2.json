@@ -1,0 +1,105 @@
+{
+  "dataset": "Marqo/deepfashion-inshop",
+  "n_instances": 201,
+  "n_pos": 400,
+  "n_neg_semantic": 400,
+  "n_neg_hard": 400,
+  "seed": 0,
+  "far_target": 0.05,
+  "per_signal": {
+    "clip/whole": {
+      "auc_semantic": 0.8814,
+      "auc_hard": 0.6737
+    },
+    "clip/crop": {
+      "auc_semantic": 0.7196,
+      "auc_hard": 0.5727
+    },
+    "clip/max": {
+      "auc_semantic": 0.8493,
+      "auc_hard": 0.6459
+    },
+    "dino/whole/cls": {
+      "auc_semantic": 0.7696,
+      "auc_hard": 0.5439
+    },
+    "dino/whole/cls_mean": {
+      "auc_semantic": 0.7552,
+      "auc_hard": 0.5311
+    },
+    "dino/crop/cls": {
+      "auc_semantic": 0.7857,
+      "auc_hard": 0.5474
+    },
+    "dino/crop/cls_mean": {
+      "auc_semantic": 0.7682,
+      "auc_hard": 0.5269
+    },
+    "dino/max/cls": {
+      "auc_semantic": 0.7874,
+      "auc_hard": 0.5554
+    },
+    "dino/max/cls_mean": {
+      "auc_semantic": 0.769,
+      "auc_hard": 0.5384
+    }
+  },
+  "and_gate_best": {
+    "clip_signal": "clip/max",
+    "dino_signal": "dino/max/cls",
+    "Tc": 0.924,
+    "Td": 0.6224,
+    "tar": 0.2675,
+    "far": 0.0488
+  },
+  "and_gate_all": [
+    {
+      "clip": "clip/max",
+      "dino": "dino/max/cls",
+      "Tc": 0.924,
+      "Td": 0.6224,
+      "tar": 0.2675,
+      "far": 0.0488
+    },
+    {
+      "clip": "clip/max",
+      "dino": "dino/crop/cls",
+      "Tc": 0.924,
+      "Td": 0.4946,
+      "tar": 0.265,
+      "far": 0.05
+    },
+    {
+      "clip": "clip/max",
+      "dino": "dino/max/cls_mean",
+      "Tc": 0.924,
+      "Td": 0.7187,
+      "tar": 0.265,
+      "far": 0.0488
+    },
+    {
+      "clip": "clip/whole",
+      "dino": "dino/crop/cls",
+      "Tc": 0.9171,
+      "Td": 0.5087,
+      "tar": 0.2275,
+      "far": 0.05
+    },
+    {
+      "clip": "clip/whole",
+      "dino": "dino/max/cls",
+      "Tc": 0.9195,
+      "Td": 0.6224,
+      "tar": 0.2175,
+      "far": 0.04
+    },
+    {
+      "clip": "clip/whole",
+      "dino": "dino/max/cls_mean",
+      "Tc": 0.9195,
+      "Td": 0.7187,
+      "tar": 0.215,
+      "far": 0.04
+    }
+  ]
+}
