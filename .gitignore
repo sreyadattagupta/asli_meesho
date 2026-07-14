@@ -16,6 +16,10 @@ my-video/
 Screenshot*.png
 asli-*.png
 test-results/
+# stray ad-hoc test images at repo root (real fixtures live in vlm-service/test_data + web/public)
+/catalog.png
+/live_other.png
+/live_same.jpeg
 
 # internal build docs (kept local, not in repo)
 CLAUDE.md

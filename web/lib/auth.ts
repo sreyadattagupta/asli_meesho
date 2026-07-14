@@ -1,6 +1,6 @@
 import { cookies, headers } from "next/headers";
-import { auth0, authConfigured } from "./auth0";
 import { repoReady } from "./db";
+import { verifySession, SESSION_COOKIE } from "./session";
 import type { Role, User } from "./db/types";
 
 // Strictly-gated E2E/demo auth bypass. NEVER active in production; requires the flag AND an
@@ -24,26 +24,18 @@ async function bypassUser(role: Role): Promise<User> {
   return u;
 }
 
-/** Our DB user for the current Auth0 session; auto-provisioned on first login. */
+/** Our DB user for the current session (email+password signed JWT cookie); or the dev bypass user. */
 export async function getSessionUser(): Promise<User | null> {
   if (BYPASS) {
     const [h, c] = await Promise.all([headers(), cookies()]);
     const role = h.get("x-test-role") ?? c.get("x-test-role")?.value;
     if (role === "seller" || role === "buyer" || role === "admin") return bypassUser(role);
   }
-  if (!authConfigured) return null; // tenant env not filled — treat as signed-out
-  const session = await auth0.getSession();
+  const c = await cookies();
+  const session = verifySession(c.get(SESSION_COOKIE)?.value);
   if (!session) return null;
   const repo = await repoReady();
-  const sub = session.user.sub!;
-  const existing = await repo.getUserByAuth0Sub(sub);
-  if (existing) return existing;
-  return repo.createUser({
-    auth0Sub: sub,
-    email: session.user.email ?? "",
-    name: session.user.name ?? "Guest",
-    role: "buyer", // provisional until /onboarding confirms
-  });
+  return repo.getUserByAuth0Sub(session.sub); // subject is `email|<email>`
 }
 
 export class HttpError extends Error {

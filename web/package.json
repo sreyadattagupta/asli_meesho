@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:https": "next dev --experimental-https -H 0.0.0.0",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
@@ -12,11 +13,11 @@
     "seed": "node --env-file=.env.local --experimental-strip-types lib/db/runSeed.ts"
   },
   "dependencies": {
-    "@auth0/nextjs-auth0": "^4.25.0",
     "@supabase/supabase-js": "^2.110.2",
     "clsx": "^2.1.1",
     "framer-motion": "^12.42.2",
     "lucide-react": "^1.24.0",
+    "mongodb": "^7.5.0",
     "next": "^15.5.20",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",

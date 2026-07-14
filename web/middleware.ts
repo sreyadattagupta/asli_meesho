@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth0, authConfigured } from "./lib/auth0";
+
+// Session cookie name — literal here (must not import lib/session, which uses node:crypto and would
+// break the edge middleware bundle). Kept in sync with lib/session.ts SESSION_COOKIE.
+const SESSION_COOKIE = "asli_session";
 
 const AUTHED = [/^\/sell/, /^\/admin/, /^\/checkout/, /^\/orders/, /^\/onboarding/];
 
@@ -7,27 +10,20 @@ const AUTHED = [/^\/sell/, /^\/admin/, /^\/checkout/, /^\/orders/, /^\/onboardin
 // x-test-role (header for Playwright, cookie for manual use). Mirrors lib/auth.ts getSessionUser.
 const BYPASS = process.env.AUTH_TEST_BYPASS === "1" && process.env.NODE_ENV !== "production";
 
-export async function middleware(req: NextRequest) {
+export function middleware(req: NextRequest) {
   if (BYPASS && (req.headers.get("x-test-role") ?? req.cookies.get("x-test-role")?.value)) {
     return NextResponse.next(); // authenticated by the test bypass
   }
-  // Tenant env not filled yet — degrade to signed-out instead of hard-failing every request.
-  if (!authConfigured) return NextResponse.next();
-
-  const res = await auth0.middleware(req); // mounts /auth/*, refreshes session
-  if (req.nextUrl.pathname.startsWith("/auth")) return res;
 
   if (AUTHED.some((r) => r.test(req.nextUrl.pathname))) {
-    const session = await auth0.getSession(req);
-    if (!session) {
-      const login = new URL("/auth/login", req.url);
+    // Presence check only — signature/expiry are verified per-route by requireRole (node runtime).
+    if (!req.cookies.get(SESSION_COOKIE)?.value) {
+      const login = new URL("/login", req.url);
       login.searchParams.set("returnTo", req.nextUrl.pathname);
       return NextResponse.redirect(login);
     }
-    // NOTE: role check happens server-side in pages/routes via requireRole —
-    // middleware can't hit the DB cheaply on every request (edge runtime).
   }
-  return res;
+  return NextResponse.next();
 }
 
 export const config = {
