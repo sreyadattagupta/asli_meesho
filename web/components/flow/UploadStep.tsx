@@ -22,10 +22,12 @@ export default function UploadStep() {
   }
 
   async function loadDemoCatalog() {
-    const res = await fetch("/proof/catalog_real.jpg");
+    // Real garment (black chikankari kurti). The matching live-proof demo fixture is the SAME kurti
+    // re-photographed; the "thief" fixture is a different dress → exercises the real same-item model.
+    const res = await fetch("/proof/real_kurti_catalog.png");
     const blob = await res.blob();
-    setCatalog(new File([blob], "catalog_real.jpg", { type: "image/jpeg" }));
-    if (!useSellerStore.getState().draft.title) setDraft({ title: "Straight Cotton Kurti — Rose" });
+    setCatalog(new File([blob], "real_kurti_catalog.png", { type: "image/png" }));
+    if (!useSellerStore.getState().draft.title) setDraft({ title: "Chikankari Embroidered Kurti — Black" });
   }
 
   /** Create the server-side draft once; signed-out demo continues locally (labelled). */

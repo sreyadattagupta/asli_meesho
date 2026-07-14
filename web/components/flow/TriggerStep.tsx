@@ -3,6 +3,8 @@
 import { useSellerStore, useSessionStore } from "@/lib/store";
 import { useT } from "@/lib/i18n";
 import { useVoiceGuide } from "@/lib/useVoiceGuide";
+import { EvidenceCards } from "@/components/seller/EvidenceCards";
+import { Agent1Panel } from "@/components/seller/Agent1Panel";
 
 // Step 2 — reverse-image result. TRIGGER ONLY (invariant #1). Never a verdict.
 // We name the platforms the photo was seen on (Flipkart / Myntra / Amazon /
@@ -98,6 +100,31 @@ export default function TriggerStep() {
               {otherCount > 0 ? ` (+${otherCount})` : ""}
             </p>
           )}
+        </div>
+      )}
+
+      {trigger.trustScore != null && trigger.band && (
+        <div className="mt-5">
+          <Agent1Panel
+            trustScore={trigger.trustScore}
+            band={trigger.band}
+            signals={trigger.signals}
+            explanation={trigger.explanation}
+            degraded={trigger.degraded}
+          />
+        </div>
+      )}
+
+      {trigger.evidence && trigger.evidence.length > 0 && (
+        <div className="mt-5">
+          <div className="mb-2 text-xs uppercase tracking-wide text-white/40">
+            {t("flow.trigger.evidenceHeading")}
+          </div>
+          <EvidenceCards
+            evidence={trigger.evidence}
+            explanation={trigger.explanation}
+            degraded={trigger.degraded}
+          />
         </div>
       )}
 

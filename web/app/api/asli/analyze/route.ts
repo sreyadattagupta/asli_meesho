@@ -5,6 +5,7 @@ import { decide, stepForAction } from "@/lib/orchestrator";
 import type { AgentSignals, OrchestratorAction } from "@/lib/orchestrator";
 import type { FlowStep } from "@/lib/orchestrator";
 import { scoreSeller, type SellerSignals } from "@/lib/engines/riskRadar";
+import { unify, type FinalDecision } from "@/lib/engines/decisionEngine";
 import { fail, ok } from "@/lib/api";
 
 const DAY = 86_400_000;
@@ -16,6 +17,8 @@ export interface AnalyzeResponse {
   trustScore: number;
   nextStep: FlowStep;
   agentResults: Record<string, unknown>;
+  /** Unified Decision Engine — composed, explainable final verdict across all agents. */
+  decision: FinalDecision;
 }
 
 // The agentic front door: reads persisted agent signals, decides, records the
@@ -72,8 +75,24 @@ export async function POST(req: Request) {
     const measurement = await repo.getMeasurement(listingId);
     const nextStep: FlowStep =
       decision.action === "AUTO_APPROVE" && measurement ? "review" : stepForAction(decision.action);
+
+    // Unified Decision Engine — compose all agents into one explainable verdict + trust score.
+    const finalDecision = unify({
+      possession: last
+        ? {
+            passed: Boolean(last.payload["passed"] ?? (signals.sameItem && signals.codeVisible)),
+            confidence: signals.matchConfidence,
+            sameItem: signals.sameItem,
+            codeVisible: signals.codeVisible,
+          }
+        : undefined,
+      sizing: measurement ? { confidence: measurement.confidence } : undefined,
+      risk,
+      orchestratorAction: decision.action,
+    });
+
     return ok<AnalyzeResponse>({
-      ...decision, trustScore: risk.trustScore, nextStep,
+      ...decision, trustScore: finalDecision.trustScore, nextStep, decision: finalDecision,
       agentResults: { possession: last?.payload ?? null, fastLane, riskBand: risk.band },
     });
   } catch (e) {

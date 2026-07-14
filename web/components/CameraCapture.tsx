@@ -4,10 +4,11 @@
 // The challenge step must use a LIVE camera stream (getUserMedia). A gallery/file
 // picker is NEVER offered here — that would defeat the possession proof.
 //
-// For pitching on a laptop with no product in hand, a clearly-labelled DEMO row
-// composes fixture photos in-browser (canvas): the product image + a slip that
-// shows the CURRENT dynamic code. These are demo fixtures, not a user gallery
-// upload, and they honour invariant #3 (the code stays dynamic per session).
+// The seller photographs ONLY the product; the dynamic code is TYPED separately and
+// text-verified server-side (single-use claim). For pitching on a laptop with no product
+// in hand, a clearly-labelled DEMO row loads product-only fixture photos and, alongside
+// the photo, hands back the code the seller should type (`demoCode`) so each scenario —
+// genuine / thief / wrong code — drives the real decision path.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
@@ -17,6 +18,8 @@ export interface CapturedPhoto {
   blob: Blob;
   previewUrl: string;
   source: "camera" | "demo";
+  /** Demo-only: the code the seller "types" for this scenario (prefills the code input). */
+  demoCode?: string;
 }
 
 type FixtureKey = "genuine" | "thief" | "wrongcode";
@@ -25,57 +28,40 @@ const FIXTURES: Array<{
   key: FixtureKey;
   label: string;
   hint: string;
-  base: string; // product image drawn under the slip
-  codeFor: (issued: string) => string | null; // slip text (null = no slip)
+  base: string; // product-only photo
+  codeFor: (issued: string) => string; // the code the seller types for this scenario
 }> = [
   {
     key: "genuine",
-    label: "Genuine (product + code)",
+    label: "Genuine (right product)",
     hint: "honest seller",
-    base: "/proof/catalog_real.jpg",
-    codeFor: (issued) => issued, // writes the REAL issued code → passes
+    base: "/proof/real_kurti_live.jpg", // the SAME kurti as the catalog, re-shot → passes
+    codeFor: (issued) => issued, // types the REAL issued code → passes
   },
   {
     key: "thief",
     label: "Thief (different item)",
     hint: "wrong product",
-    base: "/proof/live_otheritem.jpg",
-    codeFor: () => null, // no valid product, no code → blocked
+    base: "/proof/real_other_dress.png", // a DIFFERENT dress → same_item fails → blocked
+    codeFor: (issued) => issued,
   },
   {
     key: "wrongcode",
-    label: "Wrong code on slip",
+    label: "Wrong code typed",
     hint: "code mismatch",
-    base: "/proof/catalog_real.jpg",
-    codeFor: () => "WR0NG", // right item, wrong code → code_visible fails
+    base: "/proof/real_kurti_live.jpg", // right product, but a wrong typed code → claim rejects
+    codeFor: () => "WR0NG",
   },
 ];
 
-// Draw `base` image with a handwritten-style code slip into a JPEG blob.
-async function composeFixture(base: string, code: string | null): Promise<Blob> {
+/** Load a product-only fixture photo as a JPEG blob (no slip drawn — the code is typed). */
+async function composeFixture(base: string): Promise<Blob> {
   const img = await loadImage(base);
   const canvas = document.createElement("canvas");
   canvas.width = img.naturalWidth || 500;
   canvas.height = img.naturalHeight || 500;
   const ctx = canvas.getContext("2d")!;
   ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-  if (code) {
-    const w = canvas.width * 0.34;
-    const h = canvas.height * 0.16;
-    const x = canvas.width - w - canvas.width * 0.02;
-    const y = canvas.height * 0.58;
-    ctx.fillStyle = "#ffffff";
-    ctx.strokeStyle = "#000000";
-    ctx.lineWidth = 3;
-    ctx.fillRect(x, y, w, h);
-    ctx.strokeRect(x, y, w, h);
-    ctx.fillStyle = "#111111";
-    ctx.font = `bold ${Math.round(h * 0.5)}px Arial`;
-    ctx.textBaseline = "middle";
-    ctx.fillText(code, x + w * 0.1, y + h * 0.5);
-  }
-
   return await new Promise<Blob>((resolve) =>
     canvas.toBlob((b) => resolve(b!), "image/jpeg", 0.9),
   );
@@ -95,7 +81,7 @@ export default function CameraCapture({
   code,
   onCapture,
 }: {
-  code: string; // current dynamic challenge code — drawn onto the genuine fixture
+  code: string; // current dynamic challenge code — the code a demo fixture "types"
   onCapture: (photo: CapturedPhoto) => void;
 }) {
   const t = useT();
@@ -110,6 +96,16 @@ export default function CameraCapture({
     let cancelled = false;
     async function start() {
       try {
+        // getUserMedia is gated to secure contexts. Over a plain-HTTP LAN IP (e.g.
+        // http://192.168.x.x:3000) the browser blocks the camera and mediaDevices is undefined —
+        // that's the usual "camera unavailable" here, not a hardware/permission issue.
+        if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+          setError(
+            `Camera needs HTTPS or localhost — this page is on ${window.location.protocol}//${window.location.host}. ` +
+              "Open it as https:// (run `npm run dev:https`) or on localhost, or use a demo photo below.",
+          );
+          return;
+        }
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: "environment" },
           audio: false,
@@ -160,8 +156,13 @@ export default function CameraCapture({
 
   const loadDemo = useCallback(
     async (f: (typeof FIXTURES)[number]) => {
-      const blob = await composeFixture(f.base, f.codeFor(code));
-      onCapture({ blob, previewUrl: URL.createObjectURL(blob), source: "demo" });
+      const blob = await composeFixture(f.base);
+      onCapture({
+        blob,
+        previewUrl: URL.createObjectURL(blob),
+        source: "demo",
+        demoCode: f.codeFor(code),
+      });
     },
     [onCapture, code],
   );
@@ -184,7 +185,7 @@ export default function CameraCapture({
           {t("flow.challenge.cameraOnly")}
         </span>
 
-        {/* Framing overlay: product reticle + code-slip zone (invariant #2 visual guide) */}
+        {/* Framing overlay: product reticle only — the code is typed, not photographed */}
         {ready && (
           <svg
             className="pointer-events-none absolute inset-0 h-full w-full"
@@ -194,16 +195,12 @@ export default function CameraCapture({
           >
             {/* product reticle corner brackets */}
             <g stroke="rgba(139,92,246,0.9)" strokeWidth="0.7" fill="none" strokeLinecap="round">
-              <path d="M14 10 h8 M14 10 v8" />
-              <path d="M62 10 h-8 M62 10 v8" />
-              <path d="M14 46 h8 M14 46 v-8" />
-              <path d="M62 46 h-8 M62 46 v-8" />
+              <path d="M28 10 h8 M28 10 v8" />
+              <path d="M72 10 h-8 M72 10 v8" />
+              <path d="M28 46 h8 M28 46 v-8" />
+              <path d="M72 46 h-8 M72 46 v-8" />
             </g>
-            {/* code slip zone */}
-            <rect x="68" y="32" width="26" height="16" rx="2"
-              fill="rgba(245,158,11,0.08)" stroke="rgba(245,158,11,0.8)" strokeWidth="0.5" strokeDasharray="2 1.4" />
-            <text x="81" y="41" textAnchor="middle" fontSize="3.2" fill="rgba(245,158,11,0.95)">code slip</text>
-            <text x="38" y="29" textAnchor="middle" fontSize="3.2" fill="rgba(245,243,255,0.55)">product here</text>
+            <text x="50" y="29" textAnchor="middle" fontSize="3.2" fill="rgba(245,243,255,0.55)">product here</text>
           </svg>
         )}
 
@@ -238,7 +235,7 @@ export default function CameraCapture({
 
       <div className="rounded-xl border border-dashed border-white/15 p-4">
         <div className="mb-2 text-xs uppercase tracking-wide text-white/40">
-          Demo fixtures (no product needed · uses today’s live code)
+          Demo fixtures (no product needed · fills in the code to type)
         </div>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           {FIXTURES.map((f) => (

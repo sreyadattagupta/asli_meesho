@@ -3,8 +3,30 @@ import { getSessionUser, HttpError } from "@/lib/auth";
 import { repoReady } from "@/lib/db";
 import { fail, ok } from "@/lib/api";
 import { scoreSeller, type SellerSignals } from "@/lib/engines/riskRadar";
+import type { Listing } from "@/lib/db/types";
 
 const DAY = 86_400_000;
+
+/** Mean z-score of a seller's listing prices against each listing's category norm. */
+function avgPriceZScore(sellerListings: Listing[], allListings: Listing[]): number | undefined {
+  if (sellerListings.length === 0) return undefined;
+  const byCat = new Map<string, number[]>();
+  for (const l of allListings) {
+    const arr = byCat.get(l.category) ?? [];
+    arr.push(l.price);
+    byCat.set(l.category, arr);
+  }
+  const zs: number[] = [];
+  for (const l of sellerListings) {
+    const prices = byCat.get(l.category) ?? [];
+    if (prices.length < 3) continue; // too few peers for a meaningful norm
+    const mean = prices.reduce((a, b) => a + b, 0) / prices.length;
+    const sd = Math.sqrt(prices.reduce((a, b) => a + (b - mean) ** 2, 0) / prices.length);
+    if (sd > 0) zs.push((l.price - mean) / sd);
+  }
+  if (zs.length === 0) return undefined;
+  return zs.reduce((a, b) => a + b, 0) / zs.length;
+}
 
 /** Agent 3 — recompute a seller's trust from live signals; persists the authoritative score. */
 export async function POST(req: Request) {
@@ -27,13 +49,38 @@ export async function POST(req: Request) {
 
     const events = await repo.listTrustEvents(seller.id);
     const now = Date.now();
+
+    // Listing-derived signals from persisted state (no hardcoded placeholders).
+    const sellerListings = await repo.listListings({ sellerId: seller.id });
+    const allListings = await repo.listListings();
+
+    // Image reuse: strongest reverse-image trigger seen across this seller's possession checks.
+    let imageReuseCount = 0;
+    for (const l of sellerListings) {
+      for (const c of await repo.listChecks(l.id)) {
+        if (c.agent === "possession") {
+          imageReuseCount = Math.max(imageReuseCount, Number(c.payload["matchCount"] ?? 0));
+        }
+      }
+    }
+
+    // Price anomaly: seller's mean listing price vs its category's mean/σ (z-score).
+    const priceZScore = avgPriceZScore(sellerListings, allListings);
+
+    // Velocity: listings created by this seller in the last 24h.
+    const listingVelocityPerDay = sellerListings.filter(
+      (l) => now - Date.parse(l.createdAt) <= DAY,
+    ).length;
+
     const signals: SellerSignals = {
       passes: seller.passes,
       fails: seller.fails,
       isNew: seller.isNew,
       kycVerified: seller.kycStatus === "verified",
-      imageReuseCount: 0, // advisory; populated by the trigger source at listing time
+      imageReuseCount,
       recentEvents: events.map((e) => ({ delta: e.delta, ageDays: (now - Date.parse(e.createdAt)) / DAY })),
+      priceZScore,
+      listingVelocityPerDay,
     };
     const result = scoreSeller(signals);
     await repo.updateSeller(seller.id, { trustScore: result.trustScore, trustBand: result.band });

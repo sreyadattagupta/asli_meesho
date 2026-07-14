@@ -43,10 +43,18 @@ export default function ChallengeStep() {
   useVoiceGuide("flow.challenge.voice");
 
   const [photo, setPhoto] = useState<CapturedPhoto | null>(null);
+  const [typedCode, setTypedCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [remaining, setRemaining] = useState<number>(0);
   const [note, setNote] = useState<string | null>(null);
   const [checks, setChecks] = useState(IDLE_CHECKS);
+
+  // Camera path: seller types the code manually. Demo path: the fixture hands back the code to
+  // type (`demoCode`) so the genuine / thief / wrong-code scenarios each drive the real path.
+  const handleCapture = (p: CapturedPhoto) => {
+    setPhoto(p);
+    if (p.demoCode !== undefined) setTypedCode(p.demoCode);
+  };
 
   const setCheck = (id: CheckId, state: CheckState) =>
     setChecks((prev) => prev.map((c) => (c.id === id ? { ...c, state } : c)));
@@ -61,15 +69,30 @@ export default function ChallengeStep() {
     return () => clearInterval(id);
   }, [challenge]);
 
-  async function reissue() {
+  // Fetch a FRESH single-use code and reset the capture. Codes are dynamic + single-use + TTL-bound
+  // (invariant #3), so every retry / reload issues a new one — the seller is never locked out.
+  async function reissue({ keepNote = false }: { keepNote?: boolean } = {}) {
     const res = await fetch("/api/challenge");
     setChallenge(await res.json());
     setPhoto(null);
-    setNote(null);
+    setTypedCode("");
+    if (!keepNote) setNote(null);
   }
+
+  // On entering the challenge step (including after a browser reload that restored the flow), always
+  // start from a fresh code rather than a stale / already-used one.
+  useEffect(() => {
+    if (!challenge || challenge.expiresAt <= Date.now()) void reissue();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function verify() {
     if (!photo || !catalogFile || !challenge) return;
+    const entered = typedCode.trim().toUpperCase();
+    if (!entered) {
+      setNote(t("flow.challenge.enterCode"));
+      return;
+    }
     setBusy(true);
     setNote(null);
     setChecks([
@@ -81,7 +104,7 @@ export default function ChallengeStep() {
       const form = new FormData();
       form.append("catalog", catalogFile);
       form.append("live", photo.blob, "live.jpg");
-      form.append("code", challenge.code);
+      form.append("code", entered); // seller-typed code — text-verified by the single-use claim
       const { listingId, trigger: trig } = useSellerStore.getState();
       if (listingId) form.append("listingId", listingId);
       form.append("matchCount", String(trig?.matchCount ?? 0));
@@ -137,15 +160,15 @@ export default function ChallengeStep() {
       }
 
       if (decision.action === "RE_CHALLENGE") {
+        // Verification failed — show the exact mismatch copy and AUTO-ISSUE a fresh single-use code
+        // so the seller can immediately retake (unlimited retries; no lock-out — policy 2A).
         setDecision(decision);
         bumpAttempt();
-        setNote(
-          `${decision.reason} New bar: ${Math.round(decision.requiredConfidence * 100)}%. Take a clearer live photo with the code.`,
-        );
-        setPhoto(null);
         setChecks(IDLE_CHECKS);
-        setRemaining(0); // single-use — a retry always needs a fresh code
+        await reissue({ keepNote: true });
+        setNote(decision.reason); // MSG_LIVE_PROOF_MISMATCH — kept through the reissue
       } else {
+        // AUTO_APPROVE → advance to sizing; BLOCK → locked terminal (blocked card, no proceed).
         useSellerStore.getState().applyDecision(decision);
       }
     } finally {
@@ -177,15 +200,37 @@ export default function ChallengeStep() {
             {expired ? t("flow.challenge.expired") : t("flow.challenge.expiresIn", { s: remaining })}
           </div>
           <div className="text-white/40">{t("flow.challenge.singleUse", { a: attempt + 1 })}</div>
-          {expired && (
-            <button className="btn-ghost mt-2 !py-1.5 text-xs" onClick={reissue}>
-              {t("flow.challenge.newCode")}
-            </button>
-          )}
+          {/* Always available — a fresh single-use code on demand (no lock-out). */}
+          <button
+            className="btn-ghost mt-2 !py-1.5 text-xs"
+            onClick={() => reissue()}
+            disabled={busy}
+          >
+            {t("flow.challenge.newCode")}
+          </button>
         </div>
       </div>
 
+      {/* Type today's code — text-verified server-side (single-use). Not photographed. */}
       <div className="mt-6">
+        <label htmlFor="challenge-code" className="text-sm text-white/60">
+          {t("flow.challenge.typeCodeLabel")}
+        </label>
+        <input
+          id="challenge-code"
+          value={typedCode}
+          onChange={(e) => setTypedCode(e.target.value.toUpperCase())}
+          disabled={busy || expired}
+          maxLength={12}
+          autoComplete="off"
+          spellCheck={false}
+          placeholder={challenge.code}
+          aria-label={t("flow.challenge.typeCodeLabel")}
+          className="mt-1.5 w-full rounded-xl border border-white/15 bg-asli-ink px-4 py-3 font-mono text-2xl tracking-[0.3em] text-white outline-none placeholder:text-white/20 focus-visible:ring-2 focus-visible:ring-asli-violet"
+        />
+      </div>
+
+      <div className="mt-5">
         {photo ? (
           <div className="space-y-4">
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -200,7 +245,14 @@ export default function ChallengeStep() {
               />
             )}
             <div className="flex gap-3">
-              <button className="btn-ghost" onClick={() => setPhoto(null)} disabled={busy}>
+              <button
+                className="btn-ghost"
+                onClick={() => {
+                  setPhoto(null);
+                  setTypedCode("");
+                }}
+                disabled={busy}
+              >
                 {t("flow.challenge.retake")}
               </button>
               <button className="btn-primary flex-1" onClick={verify} disabled={busy || expired}>
@@ -209,7 +261,7 @@ export default function ChallengeStep() {
             </div>
           </div>
         ) : (
-          <CameraCapture code={challenge.code} onCapture={setPhoto} />
+          <CameraCapture code={challenge.code} onCapture={handleCapture} />
         )}
       </div>
 

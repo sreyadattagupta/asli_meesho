@@ -67,7 +67,25 @@ export interface OrchestratorDecision {
   reason: string;
 }
 
+// Attempt cap used ONLY to bound the risk-adaptive confidence nudge (see requiredConfidence). The
+// live proof is NOT lock-out based: a failed attempt always earns a retry with a fresh single-use
+// code (policy: unlimited retries). A live proof that never matches simply never passes — we never
+// permanently block an honest seller who is fumbling their photos.
 export const MAX_ATTEMPTS = 2;
+
+// Same-product confidence floor for Agent 1 (Live Proof). Calibrated to the possession-confidence
+// scale the vlm-service actually emits under the segmentation + crop-CLIP model: a genuine live
+// re-capture of a real garment lands ≈0.90–0.95, a different/rejected item ≤0.45. The bar sits
+// between those bands so a genuine seller clears it while a mismatch never does. The service already
+// hard-gates same_item (crop cosine + colour + code); this is the composed second gate. Adaptive
+// (invariant #7) but never a constant. Configurable without touching logic.
+export const MATCH_THRESHOLD = Number(process.env.NEXT_PUBLIC_MATCH_THRESHOLD ?? 0.82);
+
+// Exact user-facing copy required by the Agent-1 spec — surfaced verbatim in the seller UI.
+export const MSG_LIVE_PROOF_MISMATCH =
+  "The uploaded live proof does not match your original catalog photo. Please retake the photo.";
+export const MSG_LIVE_PROOF_BLOCKED =
+  "Verification failed twice. This listing has been blocked for security reasons. Please start a new verification.";
 
 /** Which flow step the UI renders after an orchestrator action. */
 export function stepForAction(a: OrchestratorAction): FlowStep {
@@ -83,21 +101,32 @@ export function stepForAction(a: OrchestratorAction): FlowStep {
 }
 
 /**
- * Risk-adaptive confidence bar. A bare possession check needs 0.70; a new seller,
- * a heavily-reused image, or a repeat attempt each push the bar higher — so the
- * system reasons about *how sure* it must be, rather than applying one fixed rule.
+ * Risk-adaptive confidence bar, floored at MATCH_THRESHOLD. A new seller (cold-start) and each
+ * repeat attempt push the bar HIGHER — never below the floor (invariant #7).
+ *
+ * NOTE: reverse-image reuse does NOT raise this bar. "Seen elsewhere" is a TRIGGER, not a verdict
+ * (invariant #1) — an honest reseller using a supplier's catalog photo must not face a HARDER
+ * possession proof just because the image is widely reused. Reuse gates whether the challenge runs;
+ * it never penalises the seller's live proof.
  */
 export function requiredConfidence(
   s: Pick<AgentSignals, "reverseImageMatches" | "sellerIsNew" | "attempt">,
 ): number {
-  let bar = 0.7;
-  if (s.sellerIsNew) bar += 0.1; // cold-start: stricter until a record exists
-  if (s.reverseImageMatches >= 10) bar += 0.1; // widely-reused image → more scrutiny
-  bar += Math.min(s.attempt, MAX_ATTEMPTS) * 0.05; // each retry raises the bar
-  return Math.min(bar, 0.95);
+  let bar = MATCH_THRESHOLD;
+  if (s.sellerIsNew) bar += 0.03; // cold-start: a touch stricter until a record exists
+  bar += Math.min(s.attempt, MAX_ATTEMPTS) * 0.01; // each retry nudges the bar
+  return Math.min(bar, 0.9);
 }
 
-/** The agentic core: turn raw agent signals into the next action. */
+/**
+ * The agentic core: turn raw Agent-1 signals into the next action.
+ *
+ * Agent 1 (Live Proof) is a STRICT gate: the live photo must be the SAME product as the catalog
+ * (same_item) with the code confirmed AND the match confidence at/above the ≥90% bar. Any failure
+ * — a different item, a swapped product, or similarity under the bar — is a verification failure:
+ * the seller retries, and a SECOND failure blocks the listing (MAX_ATTEMPTS). No silent pass, no
+ * cached verdict — `s` is computed fresh from the real VLM/embedding pipeline on every attempt.
+ */
 export function decide(s: AgentSignals, opts?: { fastLane?: boolean }): OrchestratorDecision {
   const bar = requiredConfidence(s);
 
@@ -111,38 +140,24 @@ export function decide(s: AgentSignals, opts?: { fastLane?: boolean }): Orchestr
     };
   }
 
-  // Wrong item is never recoverable by retrying — block outright.
-  if (!s.sameItem && s.matchConfidence <= 0.2) {
-    return {
-      action: "BLOCK",
-      requiredConfidence: bar,
-      reason: "Different product from the catalog photo.",
-    };
-  }
-
+  // PASS — same product, code confirmed, similarity at/above the strict ≥90% bar.
   const passed = s.sameItem && s.codeVisible && s.matchConfidence >= bar;
   if (passed) {
     return {
       action: "AUTO_APPROVE",
       requiredConfidence: bar,
-      reason: `Possession proven at ${s.matchConfidence.toFixed(2)} ≥ ${bar.toFixed(2)}.`,
+      reason: `Live proof matches the catalog at ${Math.round(s.matchConfidence * 100)}% (≥ ${Math.round(
+        bar * 100,
+      )}% required).`,
     };
   }
 
-  // Close miss (right item, code unclear, or just under the bar) → adaptive retry.
-  const closeMiss = s.sameItem && s.matchConfidence >= bar - 0.2;
-  if (closeMiss && s.attempt < MAX_ATTEMPTS) {
-    return {
-      action: "RE_CHALLENGE",
-      requiredConfidence: bar,
-      reason: "Right item but proof unclear — re-challenging at a stricter bar.",
-    };
-  }
-
-  // Out of retries or genuinely ambiguous → hand to a human (Suraksha).
+  // FAIL — wrong/replaced item or similarity under the bar. Always retry with a FRESH single-use
+  // code (policy: unlimited retries — invariant #3 keeps each code dynamic + single-use + TTL-bound).
+  // The seller is never locked out; a proof that never matches the catalog simply never passes.
   return {
-    action: "ESCALATE_HUMAN",
+    action: "RE_CHALLENGE",
     requiredConfidence: bar,
-    reason: "Ambiguous after retries — routing to human review.",
+    reason: MSG_LIVE_PROOF_MISMATCH,
   };
 }

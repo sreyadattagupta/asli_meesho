@@ -1,28 +1,52 @@
 import { describe, expect, it } from "vitest";
-import { decide, requiredConfidence, stepForAction, MAX_ATTEMPTS } from "./orchestrator";
+import {
+  decide, requiredConfidence, stepForAction, MAX_ATTEMPTS, MATCH_THRESHOLD,
+  MSG_LIVE_PROOF_MISMATCH,
+} from "./orchestrator";
 
 const base = {
   reverseImageMatches: 3, sameItem: true, codeVisible: true,
-  matchConfidence: 0.9, sellerIsNew: false, attempt: 0,
+  matchConfidence: 0.95, sellerIsNew: false, attempt: 0,
 };
 
 describe("requiredConfidence", () => {
-  it("base bar 0.70", () => expect(requiredConfidence(base)).toBeCloseTo(0.7));
-  it("cold-start +0.10", () => expect(requiredConfidence({ ...base, sellerIsNew: true })).toBeCloseTo(0.8));
-  it("heavy reuse +0.10", () => expect(requiredConfidence({ ...base, reverseImageMatches: 12 })).toBeCloseTo(0.8));
-  it("caps at 0.95", () => expect(requiredConfidence({ ...base, sellerIsNew: true,
-    reverseImageMatches: 12, attempt: 9 })).toBeLessThanOrEqual(0.95));
+  it("floored at the strict ≥90% threshold", () =>
+    expect(requiredConfidence(base)).toBeCloseTo(MATCH_THRESHOLD));
+  it("cold-start nudges above the floor", () =>
+    expect(requiredConfidence({ ...base, sellerIsNew: true })).toBeGreaterThan(MATCH_THRESHOLD));
+  it("reverse-image reuse does NOT raise the bar (invariant #1 — trigger, not a penalty)", () =>
+    expect(requiredConfidence({ ...base, reverseImageMatches: 50 })).toBeCloseTo(MATCH_THRESHOLD));
+  it("caps at 0.90", () => expect(requiredConfidence({ ...base, sellerIsNew: true,
+    reverseImageMatches: 50, attempt: 9 })).toBeLessThanOrEqual(0.9));
 });
 
-describe("decide", () => {
-  it("AUTO_APPROVE above bar", () => expect(decide(base).action).toBe("AUTO_APPROVE"));
-  it("BLOCK wrong item at floor confidence", () =>
-    expect(decide({ ...base, sameItem: false, matchConfidence: 0.1 }).action).toBe("BLOCK"));
-  it("RE_CHALLENGE close miss with attempts left", () =>
-    expect(decide({ ...base, codeVisible: false, matchConfidence: 0.6 }).action).toBe("RE_CHALLENGE"));
-  it("ESCALATE_HUMAN when out of retries", () =>
-    expect(decide({ ...base, codeVisible: false, matchConfidence: 0.6, attempt: MAX_ATTEMPTS }).action)
-      .toBe("ESCALATE_HUMAN"));
+describe("decide — strict Agent-1 gate", () => {
+  it("AUTO_APPROVE when same product + code + confidence ≥ 90%", () =>
+    expect(decide(base).action).toBe("AUTO_APPROVE"));
+
+  it("fails a match just under the confidence bar (retry on first attempt)", () =>
+    expect(decide({ ...base, matchConfidence: MATCH_THRESHOLD - 0.05 }).action).toBe("RE_CHALLENGE"));
+
+  it("RE_CHALLENGE on a verification failure, with the exact mismatch copy", () => {
+    const d = decide({ ...base, sameItem: false, matchConfidence: 0.4, attempt: 0 });
+    expect(d.action).toBe("RE_CHALLENGE");
+    expect(d.reason).toBe(MSG_LIVE_PROOF_MISMATCH);
+  });
+
+  it("keeps RE_CHALLENGE on repeat failures — unlimited retries, never a lock-out (policy 2A)", () => {
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const d = decide({ ...base, sameItem: false, matchConfidence: 0.4, attempt });
+      expect(d.action).toBe("RE_CHALLENGE");
+      expect(d.reason).toBe(MSG_LIVE_PROOF_MISMATCH);
+    }
+  });
+
+  it("a different item never AUTO_APPROVEs", () => {
+    for (let attempt = 0; attempt < MAX_ATTEMPTS + 2; attempt++) {
+      expect(decide({ ...base, sameItem: false, matchConfidence: 0.1, attempt }).action)
+        .not.toBe("AUTO_APPROVE");
+    }
+  });
 });
 
 describe("stepForAction", () => {
@@ -42,8 +66,10 @@ describe("decide — fast lane (Task 5.4)", () => {
     expect(d.action).toBe("AUTO_APPROVE");
     expect(d.reason).toMatch(/fast lane/i);
   });
-  it("ineligible path is unchanged when fastLane is false", () => {
+  it("ineligible path runs the strict gate when fastLane is false", () => {
     expect(decide(base, { fastLane: false }).action).toBe("AUTO_APPROVE");
-    expect(decide({ ...base, sameItem: false, matchConfidence: 0.1 }, { fastLane: false }).action).toBe("BLOCK");
+    // wrong item → RE_CHALLENGE (retry with a fresh code), never a lock-out
+    expect(decide({ ...base, sameItem: false, matchConfidence: 0.1, attempt: 1 }, { fastLane: false }).action)
+      .toBe("RE_CHALLENGE");
   });
 });

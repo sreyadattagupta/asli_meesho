@@ -5,7 +5,8 @@ import type { RiskResult } from "./riskRadar";
 export interface AgentOutputs {
   possession?: { passed: boolean; confidence: number; sameItem: boolean; codeVisible: boolean };
   sizing?: { confidence: number };
-  risk: RiskResult;
+  // Only the fields unify() reads — any full RiskResult satisfies this structurally.
+  risk: Pick<RiskResult, "trustScore" | "band">;
   orchestratorAction: OrchestratorAction;
 }
 

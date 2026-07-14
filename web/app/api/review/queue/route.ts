@@ -2,6 +2,7 @@ import { requireRole, HttpError } from "@/lib/auth";
 import { repoReady } from "@/lib/db";
 import { fail, ok } from "@/lib/api";
 import type { AuthenticityCheck, Listing, ProductImage, Review, Seller } from "@/lib/db/types";
+import type { Agent1Evidence } from "@/lib/agent1Client";
 
 export interface ReviewQueueItem {
   review: Review;
@@ -9,6 +10,8 @@ export interface ReviewQueueItem {
   seller: Seller | null;
   checks: AuthenticityCheck[];
   images: ProductImage[];
+  // Agent 1 reverse-search evidence (from the reverse_image_checked audit entry, if any).
+  evidence: Agent1Evidence[];
 }
 
 /** Human-in-the-loop queue: every pending ESCALATE_HUMAN listing with full agent context. */
@@ -20,12 +23,15 @@ export async function GET() {
     const items = await Promise.all(
       pending.map(async (review): Promise<ReviewQueueItem> => {
         const listing = await repo.getListing(review.listingId);
-        const [seller, checks, images] = await Promise.all([
+        const [seller, checks, images, audit] = await Promise.all([
           listing ? repo.getSeller(listing.sellerId) : Promise.resolve(null),
           repo.listChecks(review.listingId),
           repo.listImages(review.listingId),
+          repo.listAudit(review.listingId),
         ]);
-        return { review, listing, seller, checks, images };
+        const lastTrigger = audit.filter((a) => a.event === "reverse_image_checked").at(-1);
+        const evidence = (lastTrigger?.data?.evidence as Agent1Evidence[] | undefined) ?? [];
+        return { review, listing, seller, checks, images, evidence };
       }),
     );
     return ok<{ items: ReviewQueueItem[] }>({ items });

@@ -62,23 +62,27 @@ describe("agentic flows", () => {
     expect(decision.action).toBe("AUTO_APPROVE");
   });
 
-  it("thief: wrong-item signal → BLOCK + listing blocked", async () => {
+  it("thief: wrong-item attempts always RE_CHALLENGE — never a lock-out (policy 2A)", async () => {
     const { listing } = await newSellerListing();
     const repo = await repoReady();
-    await repo.addCheck({
-      listingId: listing.id, agent: "possession",
-      payload: { same_item: false, code_visible: false, matchCount: 5 },
-      confidence: 0.1, action: "recorded", requiredConfidence: 0, reason: "different product",
-    });
-    const decision = await (await json(ANALYZE, { listingId: listing.id })).json();
-    expect(decision.action).toBe("BLOCK");
-    expect((await repo.getListing(listing.id))!.status).toBe("blocked");
+    // A thief who never holds the item keeps failing → keeps getting a fresh code, never blocked.
+    for (let i = 0; i < MAX_ATTEMPTS + 2; i++) {
+      await repo.addCheck({
+        listingId: listing.id, agent: "possession",
+        payload: { same_item: false, code_visible: false, matchCount: 5 },
+        confidence: 0.1, action: "recorded", requiredConfidence: 0, reason: "different product",
+      });
+      const decision = await (await json(ANALYZE, { listingId: listing.id })).json();
+      expect(decision.action).toBe("RE_CHALLENGE");
+      expect(decision.nextStep).toBe("challenge");
+    }
+    expect((await repo.getListing(listing.id))!.status).not.toBe("blocked");
   });
 
-  it("escalate: out of retries → review row created", async () => {
+  it("many failed attempts still RE_CHALLENGE (unlimited retries, fresh code each time)", async () => {
     const { listing } = await newSellerListing();
     const repo = await repoReady();
-    for (let i = 0; i <= MAX_ATTEMPTS; i++) {
+    for (let i = 0; i <= MAX_ATTEMPTS + 3; i++) {
       await repo.addCheck({
         listingId: listing.id, agent: "possession",
         payload: { same_item: true, code_visible: false, matchCount: 3 },
@@ -86,8 +90,8 @@ describe("agentic flows", () => {
       });
     }
     const decision = await (await json(ANALYZE, { listingId: listing.id })).json();
-    expect(decision.action).toBe("ESCALATE_HUMAN");
-    expect((await repo.listPendingReviews()).some((r) => r.listingId === listing.id)).toBe(true);
+    expect(decision.action).toBe("RE_CHALLENGE");
+    expect((await repo.getListing(listing.id))!.status).not.toBe("blocked");
   });
 
   it("commerce: order → advance×2 → Promise Keeper verdict persisted", async () => {

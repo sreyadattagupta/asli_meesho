@@ -126,14 +126,35 @@ export async function seedRepo(repo: Repo): Promise<void> {
   });
   await repo.advanceOrder(delivered.id); // shipped
   await repo.advanceOrder(delivered.id); // delivered
+  // Match case: delivery photo == frozen catalog (raster JPGs so Agent 4's CLIP/VLM check runs for
+  // real; identical bytes also keep the labelled mock in agreement). Promise Keeper ⇒ kept.
   await repo.upsertPromise({
     listingId: deliveredOn.id, orderId: delivered.id,
     frozen: {
       title: deliveredOn.title, price: deliveredOn.price, category: deliveredOn.category,
-      sizeChart: deliveredOn.sizeChart, imageUrl: "/mock/sarees-1.svg",
+      sizeChart: deliveredOn.sizeChart, imageUrl: "/mock/delivery/order-catalog.jpg",
     },
-    deliveryPhotoUrl: "/mock/sarees-1.svg",
+    deliveryPhotoUrl: "/mock/delivery/order-catalog.jpg",
   });
+
+  // Mismatch case: a genuinely different delivery photo ⇒ Promise Keeper flags "not as pictured".
+  const mismatchOn = created[1];
+  const mismatchOrder = await repo.createOrder({
+    listingId: mismatchOn.id, buyerUserId: buyer.id,
+    address: { name: "Demo Buyer", line1: "12 MG Road", city: "Pune", pincode: "411001" },
+    paymentMethod: "cod", status: "placed",
+  });
+  await repo.advanceOrder(mismatchOrder.id); // shipped
+  await repo.advanceOrder(mismatchOrder.id); // delivered
+  await repo.upsertPromise({
+    listingId: mismatchOn.id, orderId: mismatchOrder.id,
+    frozen: {
+      title: mismatchOn.title, price: mismatchOn.price, category: mismatchOn.category,
+      sizeChart: mismatchOn.sizeChart, imageUrl: "/mock/delivery/order-catalog.jpg",
+    },
+    deliveryPhotoUrl: "/mock/delivery/order-mismatch.jpg",
+  });
+
   await repo.createOrder({
     listingId: created[2].id, buyerUserId: buyer.id,
     address: { name: "Demo Buyer", line1: "12 MG Road", city: "Pune", pincode: "411001" },

@@ -7,9 +7,12 @@ import { MockProvider } from "../mock";
 import { GeminiProvider } from "../gemini";
 
 describe("prompt rendering (single source)", () => {
-  it("substitutes the challenge code", () => {
-    expect(renderMatchPrompt("AX42")).toContain("AX42");
-    expect(renderMatchPrompt("AX42")).not.toContain("{{code}}");
+  it("renders the match prompt with no unresolved placeholder", () => {
+    // The challenge code is entered/verified as TEXT upstream and is NOT in the photo, so the
+    // match prompt is code-agnostic. renderMatchPrompt must still leave no {{code}} token behind.
+    const p = renderMatchPrompt("AX42");
+    expect(p.length).toBeGreaterThan(0);
+    expect(p).not.toContain("{{code}}");
   });
   it("substitutes the reference object", () => {
     expect(renderMeasurePrompt("a4")).toContain("a4");
@@ -55,11 +58,14 @@ describe("GeminiProvider + withDegradation", () => {
     expect(r.passed).toBe(true);
   });
 
-  it("falls back to mock and flips degraded after retries fail", async () => {
+  it("possession FAILS CLOSED (never auto-passes) and flips degraded after retries fail", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 500, text: async () => "boom" }) as unknown as Response));
     const wrapped: VlmProvider = withDegradation(new GeminiProvider());
     const r = await wrapped.match(img(), new Blob([new Uint8Array(80)]), "AX42");
-    expect(r.passed).toBe(true); // mock's distinct-image pass
+    // Security-critical: a possession gate must never fail OPEN on VLM outage.
+    expect(r.passed).toBe(false);
+    expect(r.same_item).toBe(false);
+    expect(r.confidence).toBe(0);
     expect(vlmDegraded()).toBe(true);
   });
 });

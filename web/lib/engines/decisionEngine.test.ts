@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { unify, type AgentOutputs } from "./decisionEngine";
 import type { RiskResult } from "./riskRadar";
 
-const risk: RiskResult = { trustScore: 60, band: "medium", contributingSignals: [], fastLaneEligible: false };
+const risk: Pick<RiskResult, "trustScore" | "band"> = { trustScore: 60, band: "medium" };
 const base: AgentOutputs = {
   possession: { passed: true, confidence: 0.96, sameItem: true, codeVisible: true },
   sizing: { confidence: 0.8 },

@@ -74,7 +74,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </button>
             {status === "authed" && user ? (
               <a
-                href="/auth/logout"
+                href="/api/auth/logout"
                 aria-label={t("nav.signout")}
                 className="flex min-h-[36px] items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-white/70 transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-asli-violet"
               >

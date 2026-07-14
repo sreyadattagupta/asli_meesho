@@ -7,6 +7,7 @@ import { FlowStep, initialFlow, OrchestratorDecision, OrchestratorAction } from 
 import type { KycStatus, Role } from "./db/types";
 import type { MatchResult, MeasureResult } from "./vlmClient";
 import type { SizeChart } from "./sizing";
+import type { Agent1Evidence } from "./agent1Client";
 
 export interface PlatformHit {
   name: string;
@@ -21,6 +22,13 @@ export interface Trigger {
   platforms: PlatformHit[];
   sources: string[];
   mocked: boolean;
+  // Agent 1 engine additions (absent on the offline mock path).
+  evidence?: Agent1Evidence[];
+  signals?: Record<string, number>;
+  trustScore?: number | null;
+  band?: "high" | "medium" | "low" | null;
+  explanation?: string;
+  degraded?: boolean;
 }
 
 export interface Challenge {
@@ -39,6 +47,9 @@ interface SellerStore {
   // upload
   catalogFile?: File;
   catalogPreview?: string;
+  // Persisted copy of the catalog image (data URL) so the flow survives a browser reload — the File
+  // object itself can't be serialised. Rehydrated back into catalogFile/catalogPreview on load.
+  catalogDataUrl?: string;
 
   // trigger (reverse-image — TRIGGER only, invariant #1)
   trigger?: Trigger;
@@ -148,7 +159,23 @@ export const useSessionStore = create<SessionStore>((set) => ({
 
 const initialDraft = { title: "", price: 349, category: "kurtis" as const };
 
-export const useSellerStore = create<SellerStore>((set, get) => ({
+/** dataURL → File, to rebuild the catalog upload after a persisted reload. */
+function dataUrlToFile(dataUrl: string, name = "catalog.jpg"): File | undefined {
+  try {
+    const [meta, b64] = dataUrl.split(",");
+    const mime = /:(.*?);/.exec(meta)?.[1] ?? "image/jpeg";
+    const bin = atob(b64);
+    const arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    return new File([arr], name, { type: mime });
+  } catch {
+    return undefined;
+  }
+}
+
+export const useSellerStore = create<SellerStore>()(
+  persist(
+    (set, get) => ({
   ...initialFlow,
   attempt: 0,
   draft: initialDraft,
@@ -157,8 +184,12 @@ export const useSellerStore = create<SellerStore>((set, get) => ({
   setDraft: (d) => set({ draft: { ...get().draft, ...d } }),
   setCatalog: (catalogFile) => {
     const prev = get().catalogPreview;
-    if (prev) URL.revokeObjectURL(prev);
+    if (prev && prev.startsWith("blob:")) URL.revokeObjectURL(prev);
     set({ catalogFile, catalogPreview: URL.createObjectURL(catalogFile) });
+    // Snapshot to a data URL for reload persistence (the File itself can't be serialised).
+    const reader = new FileReader();
+    reader.onload = () => set({ catalogDataUrl: String(reader.result) });
+    reader.readAsDataURL(catalogFile);
   },
   setTrigger: (trigger) => set({ trigger }),
   setChallenge: (challenge) => set({ challenge }),
@@ -180,7 +211,7 @@ export const useSellerStore = create<SellerStore>((set, get) => ({
   setApproved: (approved) => set({ approved }),
   reset: () => {
     const c = get().catalogPreview;
-    if (c) URL.revokeObjectURL(c);
+    if (c && c.startsWith("blob:")) URL.revokeObjectURL(c);
     const f = get().flatlayPreview;
     if (f) URL.revokeObjectURL(f);
     set({
@@ -190,6 +221,7 @@ export const useSellerStore = create<SellerStore>((set, get) => ({
       draft: initialDraft,
       catalogFile: undefined,
       catalogPreview: undefined,
+      catalogDataUrl: undefined,
       trigger: undefined,
       challenge: undefined,
       matchResult: undefined,
@@ -201,4 +233,30 @@ export const useSellerStore = create<SellerStore>((set, get) => ({
       approved: undefined,
     });
   },
-}));
+    }),
+    {
+      name: "asli-seller-flow",
+      // Persist only what makes a reload resumable. The File/blob previews and the live-proof
+      // result can't (or shouldn't) survive a reload; the catalog rides along as a data URL and the
+      // challenge code is re-issued fresh on the challenge step (invariant #3 — never reuse a code).
+      partialize: (s) => ({
+        step: s.step,
+        draft: s.draft,
+        listingId: s.listingId,
+        attempt: s.attempt,
+        trigger: s.trigger,
+        catalogDataUrl: s.catalogDataUrl,
+      }),
+      // Rebuild the catalog File + preview from the persisted data URL so the flow can continue.
+      onRehydrateStorage: () => (state) => {
+        if (state?.catalogDataUrl && !state.catalogFile) {
+          const file = dataUrlToFile(state.catalogDataUrl);
+          if (file) {
+            state.catalogFile = file;
+            state.catalogPreview = state.catalogDataUrl;
+          }
+        }
+      },
+    },
+  ),
+);

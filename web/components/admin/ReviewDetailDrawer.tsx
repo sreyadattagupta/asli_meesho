@@ -7,6 +7,7 @@ import { X, ShieldCheck, ShieldX, Camera, Bot } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { AgentReasonRow } from "@/components/ui/AgentReasonRow";
+import { EvidenceCards } from "@/components/seller/EvidenceCards";
 import type { ReviewQueueItem } from "@/app/api/review/queue/route";
 
 export function ReviewDetailDrawer({
@@ -111,6 +112,16 @@ export function ReviewDetailDrawer({
               />
             ))}
           </div>
+
+          {/* Reverse-search evidence (Agent 1, component 5) */}
+          {item.evidence && item.evidence.length > 0 && (
+            <div className="mt-4">
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-white/40">
+                Web evidence ({item.evidence.length})
+              </p>
+              <EvidenceCards evidence={item.evidence} />
+            </div>
+          )}
 
           {/* Decision */}
           <div className="mt-5">

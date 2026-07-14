@@ -75,6 +75,33 @@ export function AgentMonitor() {
               {data.dataBackend}
             </dd>
           </div>
+          {data.cvMethod && (
+            <div className="flex items-center justify-between gap-3">
+              <dt className="text-white/50">CV method</dt>
+              <dd className="flex items-center gap-2 font-semibold">
+                <Dot state={data.cvMethod === "clip" ? "ok" : data.cvMethod === "phash" ? "warn" : "bad"} />
+                {data.cvMethod}
+                {data.vlmBackend && (
+                  <span className="text-xs font-normal text-white/40">via {data.vlmBackend}</span>
+                )}
+              </dd>
+            </div>
+          )}
+          {data.ocrAvailable !== undefined && (
+            <div className="flex items-center justify-between gap-3">
+              <dt className="text-white/50">Code OCR</dt>
+              <dd className="flex items-center gap-2 font-semibold">
+                <Dot state={data.ocrAvailable ? "ok" : "warn"} />
+                {data.ocrAvailable ? "PaddleOCR" : "VLM-only"}
+              </dd>
+            </div>
+          )}
+          {data.calibrationVersion && (
+            <div className="flex items-center justify-between gap-3">
+              <dt className="text-white/50">Calibration</dt>
+              <dd className="font-semibold text-white/70">{data.calibrationVersion}</dd>
+            </div>
+          )}
         </dl>
       )}
     </Card>

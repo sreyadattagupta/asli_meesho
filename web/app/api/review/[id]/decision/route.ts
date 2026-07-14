@@ -5,6 +5,34 @@ import { fail, ok } from "@/lib/api";
 import { applyTrustDelta } from "@/lib/engines/trust";
 import type { Review } from "@/lib/db/types";
 
+const AGENT1_BASE =
+  process.env.AGENT1_SERVICE_URL ?? process.env.VLM_SERVICE_URL ?? "http://localhost:8000";
+
+/** Push the reviewer's verdict to the Agent 1 engine so it updates priors (component 10). */
+async function notifyAgent1Feedback(
+  listingId: string,
+  sellerId: string,
+  decision: "approved" | "rejected",
+  passes: number,
+  fails: number,
+) {
+  try {
+    const form = new FormData();
+    form.append("listingId", listingId);
+    form.append("sellerId", sellerId);
+    form.append("decision", decision === "approved" ? "approve" : "reject");
+    form.append("passes", String(passes));
+    form.append("fails", String(fails));
+    await fetch(`${AGENT1_BASE}/agent1/feedback`, {
+      method: "POST",
+      body: form,
+      signal: AbortSignal.timeout(4000),
+    });
+  } catch {
+    // engine offline — the learning update is best-effort, the review still stands
+  }
+}
+
 /** Reviewer verdict → listing state + seller trust feedback (closes the learning loop). */
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -37,16 +65,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (seller) {
       const delta = approved ? 5 : -10;
       const { trustScore, trustBand } = applyTrustDelta(seller, delta);
-      await repo.updateSeller(seller.id, {
-        trustScore, trustBand,
-        passes: seller.passes + (approved ? 1 : 0),
-        fails: seller.fails + (approved ? 0 : 1),
-      });
+      const passes = seller.passes + (approved ? 1 : 0);
+      const fails = seller.fails + (approved ? 0 : 1);
+      await repo.updateSeller(seller.id, { trustScore, trustBand, passes, fails });
       await repo.addTrustEvent({
         sellerId: seller.id, delta,
         reason: approved ? "Listing approved on review" : "Listing rejected on review",
         source: approved ? "review_approved" : "review_rejected",
       });
+      // Agent 1 feedback learning (component 10) — best-effort; never blocks the reviewer.
+      await notifyAgent1Feedback(review.listingId, seller.id, decision, passes, fails);
     }
     await repo.appendAudit({
       listingId: review.listingId, actor: admin.id,

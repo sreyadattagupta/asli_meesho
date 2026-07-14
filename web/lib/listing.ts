@@ -49,10 +49,7 @@ export async function getListingBundle(id: string): Promise<ListingBundle | null
     possession,
     // A live-verified listing passed Agent 2 by definition; otherwise use the measured confidence.
     sizing: measurement ? { confidence: measurement.confidence } : listing.verified ? { confidence: 0.9 } : undefined,
-    risk: {
-      trustScore: seller?.trustScore ?? 0, band: seller?.trustBand ?? "low",
-      contributingSignals: [], fastLaneEligible: false,
-    },
+    risk: { trustScore: seller?.trustScore ?? 0, band: seller?.trustBand ?? "low" },
     orchestratorAction: action,
   });
 

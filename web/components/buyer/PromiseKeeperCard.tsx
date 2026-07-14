@@ -1,9 +1,10 @@
 "use client";
 
-// Agent 4 payoff — "Arrived as promised?" Frozen go-live promise vs the delivery photo.
-import { useState } from "react";
+// Agent 4 payoff — "Arrived as promised?" Frozen go-live promise vs the REAL delivery photo,
+// verified by the shared VLM/CLIP pipeline. Buyer may upload a fresh photo or use the delivered one.
+import { useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { AlertTriangle, CheckCircle2, PackageCheck } from "lucide-react";
+import { AlertTriangle, CheckCircle2, PackageCheck, Camera } from "lucide-react";
 import type { PromiseRecord } from "@/lib/db/types";
 
 export interface PromiseVerdict {
@@ -23,21 +24,29 @@ export function PromiseKeeperCard({
   const [verdict, setVerdict] = useState<PromiseVerdict | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [preview, setPreview] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const reduce = useReducedMotion();
 
   const frozen = promise?.frozen as
     | { title?: string; price?: number; imageUrl?: string; sizeChart?: Record<string, number> }
     | undefined;
 
+  function pick(f: File | null) {
+    setFile(f);
+    setPreview(f ? URL.createObjectURL(f) : null);
+    setVerdict(null);
+  }
+
   async function check() {
     setBusy(true);
     setErr(null);
     try {
-      const res = await fetch("/api/agents/promise-keeper/check", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderId }),
-      });
+      // Multipart when the buyer uploaded a fresh delivery photo; JSON to use the delivered one.
+      const res = await fetch("/api/agents/promise-keeper/check", file
+        ? { method: "POST", body: (() => { const fd = new FormData(); fd.append("orderId", orderId); fd.append("delivery", file, file.name); return fd; })() }
+        : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId }) });
       const body = await res.json();
       if (!res.ok) {
         setErr(body?.error?.message ?? "Check failed — retry.");
@@ -77,12 +86,12 @@ export function PromiseKeeperCard({
         </figure>
         <figure>
           <figcaption className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
-            Delivery photo <span className="normal-case text-zinc-300">(simulated)</span>
+            Delivery photo
           </figcaption>
-          {promise?.deliveryPhotoUrl ? (
+          {preview ?? promise?.deliveryPhotoUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={promise.deliveryPhotoUrl}
+              src={preview ?? promise?.deliveryPhotoUrl ?? ""}
               alt="Delivery evidence"
               className="aspect-square w-full rounded-xl border border-zinc-100 object-cover"
             />
@@ -91,6 +100,22 @@ export function PromiseKeeperCard({
               No delivery photo
             </div>
           )}
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="sr-only"
+            onChange={(e) => pick(e.target.files?.[0] ?? null)}
+          />
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            className="mt-1 flex w-full items-center justify-center gap-1.5 rounded-lg border border-zinc-200 px-2 py-1.5 text-[11px] font-medium text-zinc-600 hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-asli-violet"
+          >
+            <Camera className="h-3.5 w-3.5" aria-hidden />
+            {file ? "Change photo" : "Upload your delivery photo"}
+          </button>
         </figure>
       </div>
 

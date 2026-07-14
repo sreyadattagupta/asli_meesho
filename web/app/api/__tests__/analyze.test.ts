@@ -53,36 +53,43 @@ describe("POST /api/asli/analyze", () => {
     listingId = l.id;
   });
 
-  it("thief payload ⇒ BLOCK and listing goes blocked", async () => {
+  it("first thief attempt ⇒ RE_CHALLENGE (retry), not yet blocked", async () => {
     await addPossession({ same_item: false, code_visible: false, matchCount: 4 }, 0.1);
-    const res = await analyze();
-    const body = await res.json();
-    expect(body.action).toBe("BLOCK");
-    expect(body.nextStep).toBe("review");
-    const repo = await repoReady();
-    expect((await repo.getListing(listingId))?.status).toBe("blocked");
-  });
-
-  it("close miss ⇒ RE_CHALLENGE with nextStep challenge", async () => {
-    await addPossession({ same_item: true, code_visible: false, matchCount: 4 }, 0.6);
     const body = await (await analyze()).json();
     expect(body.action).toBe("RE_CHALLENGE");
     expect(body.nextStep).toBe("challenge");
   });
 
-  it("repeat past MAX_ATTEMPTS ⇒ review row created", async () => {
-    for (let i = 0; i <= MAX_ATTEMPTS; i++) {
+  it("second thief attempt ⇒ still RE_CHALLENGE (unlimited retries, never blocked)", async () => {
+    await addPossession({ same_item: false, code_visible: false, matchCount: 4 }, 0.1);
+    await addPossession({ same_item: false, code_visible: false, matchCount: 4 }, 0.1);
+    const body = await (await analyze()).json();
+    expect(body.action).toBe("RE_CHALLENGE");
+    expect(body.nextStep).toBe("challenge");
+    const repo = await repoReady();
+    expect((await repo.getListing(listingId))?.status).not.toBe("blocked");
+  });
+
+  it("below the confidence bar on the first attempt ⇒ RE_CHALLENGE with nextStep challenge", async () => {
+    // Same item + code, but the match confidence sits under the adaptive bar → retry, not approve.
+    await addPossession({ same_item: true, code_visible: true, matchCount: 4 }, 0.7);
+    const body = await (await analyze()).json();
+    expect(body.action).toBe("RE_CHALLENGE");
+    expect(body.nextStep).toBe("challenge");
+  });
+
+  it("repeated failure past MAX_ATTEMPTS ⇒ still RE_CHALLENGE (no lock-out, fresh code each time)", async () => {
+    for (let i = 0; i <= MAX_ATTEMPTS + 2; i++) {
       await addPossession({ same_item: true, code_visible: false, matchCount: 4 }, 0.6);
     }
     const body = await (await analyze()).json();
-    expect(body.action).toBe("ESCALATE_HUMAN");
+    expect(body.action).toBe("RE_CHALLENGE");
     const repo = await repoReady();
-    const pending = await repo.listPendingReviews();
-    expect(pending.some((r) => r.listingId === listingId)).toBe(true);
+    expect((await repo.getListing(listingId))?.status).not.toBe("blocked");
   });
 
   it("pass ⇒ AUTO_APPROVE with nextStep sizing", async () => {
-    await addPossession({ same_item: true, code_visible: true, matchCount: 4 }, 0.9);
+    await addPossession({ same_item: true, code_visible: true, matchCount: 4 }, 0.95);
     const body = await (await analyze()).json();
     expect(body.action).toBe("AUTO_APPROVE");
     expect(body.nextStep).toBe("sizing");

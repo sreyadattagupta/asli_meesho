@@ -61,14 +61,17 @@ export const en = {
   "flow.trigger.headlineClean": "Photo looks original",
   "flow.trigger.subtitle": "We checked this image across the web — Google, Flipkart, Myntra, Amazon, Meesho and more. That’s normal for a reseller using a supplier’s photo, so we don’t block you. We just ask you to prove you physically hold the item.",
   "flow.trigger.seenOn": "Seen on",
+  "flow.trigger.evidenceHeading": "Matching products found online",
   "flow.trigger.marketNote": "Found on {m} marketplaces. Prove possession to list it here anyway.",
   "flow.trigger.cta": "Prove possession — get today’s code →",
   "flow.trigger.voice": "Your photo was seen elsewhere online. That is fine — just prove you hold the product with today's code.",
 
   // challenge
   "flow.challenge.title": "Prove you hold it",
-  "flow.challenge.subtitle": "Write today’s code on a slip of paper, place it next to the real product, and take a live camera photo. A screenshot can’t fake this.",
+  "flow.challenge.subtitle": "Type today’s code below, then take a live camera photo of the product itself. The code is time-bound and single-use — a screenshot can’t fake this.",
   "flow.challenge.codeLabel": "Today’s code",
+  "flow.challenge.typeCodeLabel": "Type today’s code",
+  "flow.challenge.enterCode": "Enter today’s code before verifying.",
   "flow.challenge.expiresIn": "Expires in {s}s",
   "flow.challenge.expired": "Expired",
   "flow.challenge.singleUse": "Single-use · attempt {a}",
@@ -77,11 +80,11 @@ export const en = {
   "flow.challenge.verify": "Verify possession →",
   "flow.challenge.verifying": "AI verifying…",
   "flow.challenge.checkProduct": "Checking product",
-  "flow.challenge.checkCode": "Reading code",
+  "flow.challenge.checkCode": "Confirming code",
   "flow.challenge.checkLive": "Scoring live capture",
   "flow.challenge.capture": "📸 Capture live photo",
   "flow.challenge.cameraOnly": "● LIVE · camera only",
-  "flow.challenge.voice": "Write the code on a slip, hold it next to your product, and capture a live photo.",
+  "flow.challenge.voice": "Type today’s code, then capture a live photo of just your product.",
 
   // sizing
   "flow.sizing.pill": "✓ Possession proven",

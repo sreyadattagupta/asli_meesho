@@ -27,4 +27,25 @@ describe("scoreSeller — beta reputation", () => {
     expect(r.trustScore).toBeGreaterThanOrEqual(0);
     expect(r.contributingSignals.length).toBeGreaterThan(0);
   });
+
+  it("credible interval is wide at cold start, narrows with evidence", () => {
+    const cold = scoreSeller(base).credibleInterval;
+    const seasoned = scoreSeller({ ...base, passes: 80, fails: 20 }).credibleInterval;
+    expect(cold.hi - cold.lo).toBeGreaterThan(seasoned.hi - seasoned.lo);
+    expect(cold.lo).toBeGreaterThanOrEqual(0);
+    expect(cold.hi).toBeLessThanOrEqual(100);
+  });
+
+  it("price anomaly lowers score and is explained", () => {
+    const normal = scoreSeller({ ...base, passes: 20 });
+    const anomalous = scoreSeller({ ...base, passes: 20, priceZScore: -4 });
+    expect(anomalous.trustScore).toBeLessThan(normal.trustScore);
+    expect(anomalous.contributingSignals.some((s) => s.label === "Price anomaly")).toBe(true);
+  });
+
+  it("listing-velocity burst lowers score", () => {
+    const calm = scoreSeller({ ...base, passes: 20, listingVelocityPerDay: 3 });
+    const burst = scoreSeller({ ...base, passes: 20, listingVelocityPerDay: 40 });
+    expect(burst.trustScore).toBeLessThan(calm.trustScore);
+  });
 });
