@@ -44,13 +44,16 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 
 import calibration  # noqa: E402
+import clip_embed  # noqa: E402 — CLIP-ONNX semantic gate (same-item)
 import compose  # noqa: E402,F401 — kept for the composite reference; local match now decomposes
 import cv  # noqa: E402
+import dino_embed  # noqa: E402 — DINOv2-ONNX instance evidence (same-item)
 import metrology  # noqa: E402
 import instance  # noqa: E402 — weak tertiary ORB corroboration
 import ocr  # noqa: E402
 import ollama_client  # noqa: E402
 import prompts  # noqa: E402
+import same_item  # noqa: E402 — CLIP(ONNX) same-item gate + DINOv2 evidence
 import segment  # noqa: E402 — garment segmentation (crop background before CLIP)
 import vlm_backend  # noqa: E402
 from agent1.pipeline import verify as agent1_verify  # noqa: E402
@@ -118,54 +121,19 @@ app.add_middleware(
 
 MAX_BYTES = 10 * 1024 * 1024  # 10 MB per image
 
-# Agent-1 same-product similarity thresholds — CLIP cosine on the SEGMENTED GARMENT CROP (not the
-# full frame). Full-frame cosine folds the background in and collapses the same-vs-different margin
-# to ~0.04; cropping the garment first (segment.py) restores a clean margin. Tuned on the committed
-# real fixtures (same kurti crop ≈0.81, a different dress ≈0.63):
-#   ≥ MATCH_HI        → near-duplicate crop, same item on the cosine alone (no attribute read)
-#   ≥ MATCH_THRESHOLD → strongly similar; same item ONLY if the VLM colour/type attributes agree
-#   <  MATCH_THRESHOLD → different product (below the pass floor — rejected)
-# Env-overridable so the bar can be tuned on more photos without touching logic.
+# Legacy same-product thresholds — used by /vlm/verify_delivery (Agent 4) and the /vlm/match
+# perceptual-hash FALLBACK only (when neither ONNX backbone is present). The primary Agent-1 same-item
+# gate lives in same_item.py (CLIP-ONNX) with its own calibrated threshold; these are NOT it.
+#   ≥ MATCH_HI        → near-duplicate (same item on cosine alone)
+#   ≥ MATCH_THRESHOLD → strongly similar (delivery: same item if the VLM attributes agree)
 MATCH_THRESHOLD = float(os.getenv("MATCH_THRESHOLD", "0.72"))
 MATCH_HI = float(os.getenv("MATCH_HI", "0.85"))
-MATCH_LO = float(os.getenv("MATCH_LO", "0.62"))
-# Cosine-only fallback bar used ONLY when the VLM reinforcement is unavailable (model down / junk
-# JSON). Between MATCH_THRESHOLD and MATCH_HI: a clear crop match still passes without the VLM, a
-# borderline one still needs it. Never fail-open — anything below this without a VLM read is rejected.
+# Perceptual-hash pass bar for /vlm/match when no ONNX backbone is available (never fail-open).
 MATCH_SOFT_HI = float(os.getenv("MATCH_SOFT_HI", "0.80"))
 # Full-frame similarity at/above this ⇒ the "live" photo is pixel-identical to the catalog, i.e. a
 # reused catalog image, not a live capture (anti-spoof — separate from same-item).
 REUSE_CLIP = float(os.getenv("REUSE_CLIP", "0.985"))
 REUSE_PHASH = float(os.getenv("REUSE_PHASH", "0.92"))
-# Minimum HSV colour-histogram correlation between the garment crops for a same-item pass. CLIP on a
-# crop keys on SHAPE, so a same-silhouette / different-colour garment can clear the cosine bar; this
-# deterministic (VLM-free) colour gate rejects it. Tuned on fixtures: same-colour 0.23–1.0, different
-# 0.0–0.02. Only enforced when CLIP is the similarity method (phash defers colour to the VLM read).
-COLOR_MIN = float(os.getenv("COLOR_MIN", "0.12"))
-
-
-# Cap the pixel size of an image before it goes to the local vision model. A full-res phone photo
-# (e.g. 1600×900) produces enough vision tokens to OOM/crash qwen2.5vl:3b on a 4 GB card ("wsarecv:
-# connection forcibly closed"); a ≤768px copy carries the colour/type the attribute read needs and
-# loads reliably. Only used for the VLM leg — the CLIP/ORB signals still use the full-res crops.
-_VLM_MAX_SIDE = int(os.getenv("VLM_IMAGE_MAX_SIDE", "768"))
-
-
-def _downscale_for_vlm(data: bytes) -> bytes:
-    try:
-        import io as _io
-
-        from PIL import Image as _Image
-
-        img = _Image.open(_io.BytesIO(data)).convert("RGB")
-        if max(img.size) <= _VLM_MAX_SIDE:
-            return data
-        img.thumbnail((_VLM_MAX_SIDE, _VLM_MAX_SIDE))
-        buf = _io.BytesIO()
-        img.save(buf, format="JPEG", quality=90)
-        return buf.getvalue()
-    except Exception:  # noqa: BLE001 — on any failure send the original bytes
-        return data
 
 
 async def _read(upload: UploadFile, field: str) -> bytes:
@@ -196,7 +164,12 @@ async def health():
         "model": ollama_client.OLLAMA_MODEL if backend == "ollama" else vlm_backend.GEMINI_MODEL,
         "num_gpu": ollama_client._NUM_GPU,     # what the service actually sends to Ollama
         "keep_alive": ollama_client._KEEP_ALIVE,
-        "cv_method": cv_method,          # clip | phash | unavailable
+        "cv_method": cv_method,          # clip | phash | unavailable (legacy embed.py path)
+        "same_item_gate": {              # Agent-1 same-item backbones (ONNX, no torch)
+            "available": same_item.available(),
+            "clip_onnx": clip_embed.available(),      # semantic gate
+            "dinov2_onnx": dino_embed.available(),    # reported instance evidence
+        },
         "ocr_available": ocr.available(),
         "calibration_version": calibration.CALIBRATION_VERSION,
     }
@@ -244,134 +217,85 @@ async def vlm_match(
         }
 
     try:
-        # 2) Segment the garment from each frame. CLIP is background-sensitive, so we compare the
-        #    CROPS; the VLM (background-robust) still reads the WHOLE frames for attributes.
-        seg_cat = segment.segment_garment(catalog_bytes)
-        seg_liv = segment.segment_garment(live_bytes)
-        sim = cv.similarity(seg_cat["bytes"], seg_liv["bytes"])  # crop-CLIP {score, method}
-        is_clip = sim["method"] == "clip"
-        score = sim["score"]
-
-        # Reuse/liveness on the FULL frames: a live photo pixel-identical to the catalog is a reused
-        # image, not a fresh capture (anti-spoof — orthogonal to same-item).
+        # 2) Reuse/liveness on the FULL frames: a live photo pixel-identical to the catalog is a
+        #    reused image, not a fresh capture (anti-spoof — orthogonal to same-item). Uses the shared
+        #    embedding (CLIP-ONNX cosine if present, else perceptual hash) — both good at near-duplicate.
         full = cv.similarity(catalog_bytes, live_bytes)
         reuse_suspect = full["score"] >= (REUSE_CLIP if full["method"] == "clip" else REUSE_PHASH)
 
-        # 3) Ambiguous band → run the VLM colour/type read to REINFORCE the same-instance call. Below
-        #    the pass floor we reject without a read; a near-duplicate crop (≥MATCH_HI) passes on cosine
-        #    alone. The VLM is reinforcement, not a hard dependency: if it is unreachable/returns junk,
-        #    we DEGRADE to a stricter cosine-only bar (MATCH_SOFT_HI) rather than failing a genuine — and
-        #    still reject anything the crop cosine alone cannot vouch for (graceful, not fail-open).
-        need_vlm = (not is_clip) or (MATCH_THRESHOLD <= score < MATCH_HI)
-        cat: dict = {}
-        liv: dict = {}
-        attr_agree: bool | None = None
-        vlm_ok = True
-        if need_vlm:
-            try:
-                # Two single-image reads, SEQUENTIAL (a single-GPU Ollama serves one at a time). Read the
-                # WHOLE frames — the VLM attends to the garment regardless of background.
-                cat = await vlm_backend.run_vlm(
-                    prompts.describe_catalog_prompt(), images=[_downscale_for_vlm(catalog_bytes)])
-                liv = await vlm_backend.run_vlm(
-                    prompts.describe_live_prompt(), images=[_downscale_for_vlm(live_bytes)])
-                cat_color, liv_color = _norm(cat.get("color")), _norm(liv.get("color"))
-                attr_agree = bool(cat_color) and bool(liv_color) and (
-                    cat_color == liv_color or cat_color in liv_color or liv_color in cat_color
-                )
-            except Exception:  # noqa: BLE001 — model unreachable / non-JSON. Degrade, don't fail-open.
-                vlm_ok = False
-                attr_agree = None
+        # 3) SAME-ITEM GATE — CLIP (ViT-B/32) served via ONNX decides; DINOv2-small is reported as
+        #    evidence only. Calibrated on Marqo/deepfashion-inshop at a ~5% false-accept operating
+        #    point (models/same_item_calibration.json). CLIP catches an obviously-different product;
+        #    look-alike substitution (same category+colour) is beyond ANY single embedding (measured)
+        #    and is deferred to the challenge code, liveness, reuse detection and human review.
+        #    If neither ONNX model is present we fall back to a perceptual-hash bar (never fail-open).
+        seg_cat = segment.segment_garment(catalog_bytes)
+        seg_liv = segment.segment_garment(live_bytes)
+        color_sim = instance.color_similarity(seg_cat["bytes"], seg_liv["bytes"])  # reported evidence
+        orb = instance.good_matches(seg_cat["bytes"], seg_liv["bytes"])            # reported evidence
 
-        # 4) Deterministic colour gate (VLM-free) + weak ORB corroboration, both on the crops.
-        color_sim = instance.color_similarity(seg_cat["bytes"], seg_liv["bytes"])
-        color_ok = color_sim >= COLOR_MIN
-        orb = instance.good_matches(seg_cat["bytes"], seg_liv["bytes"])
-
-        # 5) Same-instance decision. VISUAL similarity (crop cosine, reinforced by the VLM attribute
-        #    read in the ambiguous band) AND the colour gate must BOTH hold — CLIP-on-a-crop keys on
-        #    shape, so the colour histogram catches a same-shape / different-colour garment even when
-        #    the VLM is down. Below the pass floor is always a different product.
-        if is_clip:
-            if score >= MATCH_HI:
-                visual_ok = True                                  # near-duplicate crop → cosine alone
-            elif score >= MATCH_THRESHOLD:
-                if attr_agree is True:
-                    visual_ok = True                              # cosine + attribute agreement
-                elif attr_agree is False:
-                    visual_ok = False                             # attributes disagree → different item
-                else:  # VLM unavailable → cosine-only fallback at a STRICTER bar (never fail-open)
-                    visual_ok = score >= MATCH_SOFT_HI
-            else:
-                visual_ok = False                                 # below the pass floor → different
-            same_item = bool(visual_ok and color_ok)
+        if same_item.available():
+            gate = same_item.decide(catalog_bytes, live_bytes)
+            same = gate["same_item"]
+            gate_score = gate["gate_score"] if gate["gate_score"] is not None else 0.0
+            method = gate["method"]
+            item_strength = calibration.same_item_strength(gate_score, gate["threshold"])
+            match_desc = (f"CLIP same-item {gate_score:.2f} "
+                          f"({'≥' if same else '<'} {gate['threshold']:.2f} bar)"
+                          + (f", DINOv2 evidence {gate['dino_evidence']:.2f}"
+                             if gate['dino_evidence'] is not None else ""))
         else:
-            # phash (no CLIP) is unreliable for same-instance → require attribute agreement + a
-            # non-trivial hash similarity, and never pass on the hash alone.
-            same_item = bool(attr_agree and score >= MATCH_THRESHOLD)
+            # No ONNX backbone available → perceptual-hash fallback (weak; never passes on hash alone
+            # without a non-trivial similarity). Kept only so the endpoint degrades rather than crashes.
+            sim = cv.similarity(seg_cat["bytes"], seg_liv["bytes"])
+            gate_score = sim["score"]
+            same = bool(gate_score >= MATCH_SOFT_HI)
+            method = f"phash-fallback({sim['method']})"
+            item_strength = min(0.5, gate_score)
+            gate = {"gate_score": gate_score, "threshold": MATCH_SOFT_HI, "dino_evidence": None,
+                    "dino_signal": None, "gate_signal": method, "degraded": True}
+            match_desc = f"phash fallback {gate_score:.2f} (no ONNX backbone)"
 
-        item_strength = calibration.instance_item_strength(
-            score, attr_agree, orb.get("good", 0), orb.get("texture_ok", False),
-        )
-        if not same_item:
+        same_item_flag = bool(same)
+        if not same_item_flag:
             item_strength = min(item_strength, 0.45)  # gated out → weak evidence
 
         confidence = calibration.possession_confidence(item_strength, code_score, 0.0, q["ok"])
-        if not same_item:
+        if not same_item_flag:
             confidence = min(confidence, 0.45)  # never report high confidence for a non-matching item
         if reuse_suspect:
             confidence = min(confidence, 0.2)   # reused catalog image — not a live capture
         # Possession = the SAME product, captured live (not reused), code confirmed upstream.
-        passed = bool(same_item and code_confirmed and not reuse_suspect)
+        passed = bool(same_item_flag and code_confirmed and not reuse_suspect)
 
         if reuse_suspect:
             reason = (
                 f"Live photo looks reused from the catalog (full-frame {full['method']} "
                 f"{full['score']:.2f} ≥ reuse bar) — retake a fresh photo of the product."
             )
-        elif need_vlm and not vlm_ok:
-            reason = (
-                f"Same-item garment-crop {sim['method']} {score:.2f} "
-                f"({'≥' if same_item else '<'} {MATCH_SOFT_HI:.2f} cosine-only bar; VLM read "
-                f"unavailable); code entered (text-verified); focus {q['blur_var']:.0f}."
-            )
-        elif need_vlm:
-            reason = (
-                f"Catalog {cat.get('color', '?')} {cat.get('type', '')}; live {liv.get('color', '?')} "
-                f"{liv.get('type', '')}. Same-item crop-{sim['method']} {score:.2f} "
-                f"(attr_agree={attr_agree}); code entered (text-verified); focus {q['blur_var']:.0f}."
-            ).strip()
-        elif same_item:
-            reason = (
-                f"Same-item crop-{sim['method']} {score:.2f} (near-duplicate, ≥ {MATCH_HI:.2f}); "
-                f"code entered (text-verified); focus {q['blur_var']:.0f}."
-            )
-        elif is_clip and score >= MATCH_THRESHOLD and not color_ok:
-            reason = (
-                f"Different product: colours differ (crop colour-corr {color_sim:.2f} "
-                f"< {COLOR_MIN:.2f}) despite similar shape ({sim['method']} {score:.2f}); "
-                f"code entered (text-verified); focus {q['blur_var']:.0f}."
-            )
+        elif same_item_flag:
+            reason = (f"Same product: {match_desc}; code entered (text-verified); "
+                      f"focus {q['blur_var']:.0f}.")
         else:
-            reason = (
-                f"Different product: garment-crop similarity {sim['method']} {score:.2f} "
-                f"< {MATCH_THRESHOLD:.2f} pass bar; code entered (text-verified); focus {q['blur_var']:.0f}."
-            )
+            reason = (f"Different product: {match_desc}; code entered (text-verified); "
+                      f"focus {q['blur_var']:.0f}.")
 
         return {
-            "same_item": same_item,
+            "same_item": same_item_flag,
             "code_visible": code_visible,
             "confidence": confidence,
             "reason": reason,
             "passed": passed,
             "signals": {
-                "cosine": score, "method": sim["method"], "color_match": bool(attr_agree),
-                "color_sim": round(color_sim, 3), "color_ok": color_ok,
+                "gate_score": round(gate_score, 4), "gate_signal": gate.get("gate_signal"),
+                "gate_threshold": gate.get("threshold"), "method": method,
+                "dino_evidence": gate.get("dino_evidence"), "dino_signal": gate.get("dino_signal"),
+                "color_sim": round(color_sim, 3),
                 "code_source": "typed" if code_confirmed else "none", "code_score": round(code_score, 3),
-                "ocr_available": False, "blur_var": q["blur_var"],
-                "reuse_suspect": reuse_suspect, "quality_ok": True,
+                "blur_var": q["blur_var"], "reuse_suspect": reuse_suspect, "quality_ok": True,
                 "seg_catalog": seg_cat["method"], "seg_live": seg_liv["method"],
                 "orb_good": orb.get("good", 0), "orb_texture_ok": orb.get("texture_ok", False),
+                "gate_degraded": gate.get("degraded", False),
             },
         }
     except HTTPException:

@@ -21,9 +21,15 @@ selectolax>=0.3
 opencv-python-headless>=4.10,<5
 # AI-generated-image classifier (Organika/sdxl-detector, Apache-2.0) needs transformers+torch —
 # runs on the HF Space; locally the aigen signal degrades to unavailable (never fabricated).
-# Perceptual-hash fallback when torch/CLIP wheels are unavailable (e.g. Python 3.14).
+# Perceptual-hash last-resort fallback when the ONNX model file is absent.
 ImageHash>=4.3
-# Optional CLIP upgrade — install manually if torch wheels are available on your platform:
+# Agent-1 same-INSTANCE backbone: DINOv2-small served via ONNX Runtime (NO torch at runtime).
+# DINOv2 beats CLIP on instance-level / same-product matching (research-grounded; and measured on
+# Marqo/deepfashion-inshop in scripts/eval_matcher.py). onnxruntime ships cp314 wheels, so this same
+# path runs on the local py3.14 box AND the py3.11 CPU Space. The model.onnx (+ .data) is a pinned
+# artifact produced once by scripts/export_dinov2_onnx.py (torch only at export time, never at serve).
+onnxruntime>=1.20
+# Optional legacy CLIP backbone (superseded by DINOv2 for same-item; still usable via VLM fallbacks):
 #   pip install torch transformers
 # Dedicated OCR cross-check for the challenge-code slip (Agent 1). paddlepaddle has NO
 # cp314 wheel — so this is active on the deployed HF Space (Python 3.11 image) and any

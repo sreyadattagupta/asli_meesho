@@ -1,0 +1,19 @@
+{
+  "_comment": "Agent-1 same-item gate calibration. CLIP is the gate; DINOv2 is reported-only evidence (measured to add no discrimination on this task — see live-proof-matcher memory / eval). All values env-overridable via SAME_ITEM_THRESHOLD / SAME_ITEM_GATE_SIGNAL.",
+  "gate_signal": "clip/max",
+  "gate_threshold": 0.78,
+  "evidence_signal": "dino/max/cls",
+  "operating_point": "fixture-validated (provisional)",
+  "_threshold_rationale": "The deepfashion-inshop eval yields 0.896 for a strict ~5% false-accept on its SEMANTIC negatives, but its positives are front/side/back poses — HARDER than a real Meesho catalog-vs-live pair — so 0.896 over-rejects genuine items (the real same-kurti fixture scores clip/max 0.81 and would fail). We therefore ship a provisional 0.78, which passes the genuine fixture (0.81) and rejects the different-dress fixture (0.71), leaning slightly toward recall since the challenge code + reuse + human review backstop fraud. MUST be re-validated on a real Meesho catalog-vs-live set; set SAME_ITEM_THRESHOLD=0.896 for the strict eval operating point.",
+  "dataset": "Marqo/deepfashion-inshop",
+  "calibration": {
+    "n_instances": 201,
+    "n_pos": 400,
+    "n_neg_semantic": 400,
+    "n_neg_hard": 400,
+    "clip/max": {"auc_semantic": 0.8493, "auc_hard": 0.6459, "tar_at_far5_semantic": 0.540, "thr_far5_semantic": 0.896},
+    "clip/whole": {"auc_semantic": 0.8814, "auc_hard": 0.6737},
+    "dino/max/cls": {"auc_semantic": 0.7874, "auc_hard": 0.5554},
+    "note": "No embedding separates same-category+same-colour look-alikes (all AUC 0.53-0.67); those are deferred to the challenge code, liveness, reuse detection, and human review. The visual gate's calibrated job is to catch obviously-different products (semantic)."
+  }
+}
