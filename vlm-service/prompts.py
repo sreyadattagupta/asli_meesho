@@ -23,9 +23,12 @@ def describe_catalog_prompt() -> str:
     return _PROMPTS["describe_catalog_prompt"]
 
 
-def describe_live_prompt(code: str) -> str:
-    """Agent 1 (local decomposition) — extract live garment attributes + slip code from ONE image."""
-    return _PROMPTS["describe_live_prompt"].replace("{{code}}", code)
+def describe_live_prompt() -> str:
+    """Agent 1 (local decomposition) — extract live garment attributes from ONE product image.
+
+    The code is typed and text-verified upstream, so the live photo is product-only (no slip).
+    """
+    return _PROMPTS["describe_live_prompt"]
 
 
 def measure_prompt(reference_object: str) -> str:
@@ -36,3 +39,13 @@ def measure_prompt(reference_object: str) -> str:
 def measure_boxes_prompt(reference_object: str) -> str:
     """Agent 2 (local metrology) — bounding boxes for reference + garment; cm computed in Python."""
     return _PROMPTS["measure_boxes_prompt"].replace("{{reference}}", reference_object)
+
+
+def measure_corners_prompt(reference_object: str) -> str:
+    """Agent 2 (homography) — reference 4 corners + garment/chest/waist boxes; cm via DLT in Python."""
+    return _PROMPTS["measure_corners_prompt"].replace("{{reference}}", reference_object)
+
+
+def delivery_prompt(title: str, category: str) -> str:
+    """Agent 4 — delivery photo vs frozen catalog + promised attributes."""
+    return _PROMPTS["delivery_prompt"].replace("{{title}}", title).replace("{{category}}", category)

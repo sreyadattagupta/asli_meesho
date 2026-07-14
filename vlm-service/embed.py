@@ -50,7 +50,11 @@ def _vector(data: bytes) -> list[float]:
     if _METHOD == "clip":  # pragma: no cover
         inputs = _clip_proc(images=img, return_tensors="pt")
         with torch.no_grad():
-            feat = _clip_model.get_image_features(**inputs)[0]
+            # transformers ≥5 changed get_image_features to return an output object rather than the
+            # projected tensor. Compute the 512-d image embedding directly from the vision tower +
+            # visual projection so this is stable across transformers versions.
+            vision = _clip_model.vision_model(pixel_values=inputs["pixel_values"])
+            feat = _clip_model.visual_projection(vision.pooler_output)[0]
         feat = feat / feat.norm()
         return feat.tolist()
     import imagehash
@@ -98,7 +102,8 @@ def index_image(data: bytes, payload: dict) -> None:
 
 
 def similar(data: bytes, top_k: int = 5) -> list[dict]:
-    hits = _qc().search(_COLLECTION, query_vector=_vector(data), limit=top_k)
+    # qdrant-client ≥1.10 replaced `.search` with `.query_points` (returns .points).
+    hits = _qc().query_points(_COLLECTION, query=_vector(data), limit=top_k).points
     return [
         {
             "score": float(h.score),

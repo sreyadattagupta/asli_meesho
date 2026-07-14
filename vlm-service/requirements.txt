@@ -3,9 +3,30 @@ uvicorn[standard]>=0.34
 python-multipart>=0.0.20
 httpx>=0.28
 Pillow>=11.3
+# numpy — homography (single-view metrology), Laplacian blur gate, cosine math.
+# Has cp314 wheels; also the base for ImageHash/scipy.
+numpy>=2.0
+# scipy — variance-of-Laplacian focus metric (ndimage.laplace).
+scipy>=1.13
 # Qdrant TRIGGER source (embedding similarity). Local mode via qdrant-client(path=...).
 qdrant-client>=1.12
+# Agent 1 cross-source verification — fuzzy title/brand agreement vs retrieved evidence.
+rapidfuzz>=3.9
+# Agent 1 web-evidence collection — fast HTML parse for JSON-LD/OpenGraph product data.
+selectolax>=0.3
+# OpenCV — REQUIRED by Agent 1 same-instance verification: garment segmentation (segment.py,
+# GrabCut), the HSV colour gate + ORB corroboration (instance.py), and forensics copy-move.
+# Pinned <5: opencv-python-headless 5.0.0 (pre-release) throws a Windows access violation in-process
+# alongside torch/CLIP on py3.14; 4.x is stable. Has cp314 wheels.
+opencv-python-headless>=4.10,<5
+# AI-generated-image classifier (Organika/sdxl-detector, Apache-2.0) needs transformers+torch —
+# runs on the HF Space; locally the aigen signal degrades to unavailable (never fabricated).
 # Perceptual-hash fallback when torch/CLIP wheels are unavailable (e.g. Python 3.14).
 ImageHash>=4.3
 # Optional CLIP upgrade — install manually if torch wheels are available on your platform:
 #   pip install torch transformers
+# Dedicated OCR cross-check for the challenge-code slip (Agent 1). paddlepaddle has NO
+# cp314 wheel — so this is active on the deployed HF Space (Python 3.11 image) and any
+# py<=3.12 host; locally on py3.14 the code degrades to VLM-OCR only (optional import).
+#   pip install paddleocr paddlepaddle
+

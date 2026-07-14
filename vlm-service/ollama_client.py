@@ -18,8 +18,28 @@ OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5vl:latest")
 TIMEOUT = float(os.getenv("VLM_TIMEOUT", "120"))
 # Force layers onto CPU when GPU VRAM is too small (e.g. 8B vision model on a 4GB
-# card). Set OLLAMA_NUM_GPU=0 for full CPU. Unset = let Ollama decide.
+# card). Set OLLAMA_NUM_GPU=0 for full CPU, 99 for full GPU. Unset = let Ollama decide.
 _NUM_GPU = os.getenv("OLLAMA_NUM_GPU")
+# Keep the model (and its loaded vision projector) resident between calls so a demo doesn't pay
+# the cold-load again after an idle gap. "-1" = never unload; "30m" = 30 minutes. Ollama default 5m.
+_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE", "30m")
+
+def _tiny_jpeg() -> bytes | None:
+    """A small valid JPEG to warm the vision projector. Built with Pillow; None if unavailable
+    (warm then degrades to a text-only ping — harmless, just a slower first vision call)."""
+    try:
+        import io
+
+        from PIL import Image
+
+        buf = io.BytesIO()
+        Image.new("RGB", (32, 32), (128, 128, 128)).save(buf, "JPEG")
+        return buf.getvalue()
+    except Exception:  # noqa: BLE001 — Pillow absent → skip image warm
+        return None
+
+
+_TINY_JPEG = _tiny_jpeg()
 
 
 def _b64(image_bytes: bytes) -> str:
@@ -75,6 +95,7 @@ async def run_vlm(prompt: str, images: list[bytes]) -> dict:
         "images": [_b64(img) for img in images],
         "stream": False,
         "options": options,
+        "keep_alive": _KEEP_ALIVE,
     }
 
     async with httpx.AsyncClient(timeout=TIMEOUT) as client:
@@ -94,14 +115,24 @@ async def run_vlm(prompt: str, images: list[bytes]) -> dict:
 
 
 async def warm() -> None:
-    """Pre-load the model so the first real request doesn't hit a cold-load 500.
+    """Pre-load the model AND its vision projector so the first real /vlm/match isn't a ~17s
+    cold load. Sends a tiny image (not just text) — the vision path is what's slow to warm.
     Best-effort — failures are swallowed (health still reports reachability)."""
+    options: dict = {}
+    if _NUM_GPU is not None and _NUM_GPU != "":
+        options["num_gpu"] = int(_NUM_GPU)
+    body: dict = {
+        "model": OLLAMA_MODEL,
+        "prompt": "ok",
+        "stream": False,
+        "options": options,
+        "keep_alive": _KEEP_ALIVE,
+    }
+    if _TINY_JPEG is not None:
+        body["images"] = [base64.b64encode(_TINY_JPEG).decode()]
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-            await client.post(
-                f"{OLLAMA_URL}/api/generate",
-                json={"model": OLLAMA_MODEL, "prompt": "ok", "stream": False},
-            )
+            await client.post(f"{OLLAMA_URL}/api/generate", json=body)
     except httpx.HTTPError:
         pass
 

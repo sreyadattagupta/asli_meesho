@@ -1,66 +1,31 @@
-// TriggerSource seam — one contract over serpapi | qdrant | mock (invariant #1:
-// whatever the source, the result is a TRIGGER for the possession challenge, never a verdict).
-import { reverseImageSearch } from "./reverseImage";
-import type { PlatformHit } from "./reverseImage";
+// TriggerSource seam. The real reverse-image search now lives in the Agent 1 engine
+// (vlm-service /agent1/verify — live SerpAPI Lens + evidence extraction), reached from the
+// route via `agent1Client`. This module only carries the explicit offline-dev mock: it is
+// reachable ONLY when TRIGGER_SOURCE=mock, never as an automatic fallback (invariant: no
+// fabricated data on real paths). Whatever the source, the result is a TRIGGER, not a verdict.
+
+export interface PlatformHit {
+  name: string;
+  category: "marketplace" | "web";
+  count: number;
+  url: string;
+}
 
 export interface TriggerResult {
   triggered: boolean;
   matchCount: number;
   platforms: PlatformHit[];
-  source: "serpapi" | "qdrant" | "mock";
-  /** sample raw URLs for the detail view (serpapi/mock only). */
+  source: "mock";
   sources: string[];
 }
 
-class TriggerUnavailable extends Error {}
-
-export async function getTrigger(imageHash: string, bytes: Buffer): Promise<TriggerResult> {
-  const configured = process.env.TRIGGER_SOURCE ?? "serpapi";
-  switch (configured) {
-    case "serpapi": {
-      if (!process.env.SERPAPI_KEY) return mockTrigger(); // keyless ⇒ labelled mock fallback
-      const r = await reverseImageSearch(bytes); // internal hash cache keeps free-tier usage down
-      if (r.mocked) return mockTrigger(); // SerpAPI errored — reverseImage already fell back
-      return { triggered: r.triggered, matchCount: r.matchCount, platforms: r.platforms, source: "serpapi", sources: r.sources };
-    }
-    case "qdrant": {
-      try {
-        return await qdrantTrigger(imageHash, bytes);
-      } catch {
-        return mockTrigger(); // embed service not up (lands Task 5.7) — degrade, stay labelled
-      }
-    }
-    case "mock":
-      return mockTrigger();
-    default:
-      console.warn(`[trigger] unknown TRIGGER_SOURCE "${configured}" — using mock`);
-      return mockTrigger();
-  }
+/** True only when the operator explicitly opts into offline-dev mock data. */
+export function isMockMode(): boolean {
+  return (process.env.TRIGGER_SOURCE ?? "") === "mock";
 }
 
-/** Embedding-similarity trigger via the VLM service (Qdrant local mode). */
-async function qdrantTrigger(imageHash: string, bytes: Buffer): Promise<TriggerResult> {
-  const base = process.env.VLM_SERVICE_URL ?? "http://localhost:8000";
-  const form = new FormData();
-  form.append("image", new Blob([new Uint8Array(bytes)], { type: "image/jpeg" }), "catalog.jpg");
-  form.append("image_hash", imageHash);
-  const res = await fetch(`${base}/vlm/similar`, { method: "POST", body: form, signal: AbortSignal.timeout(8000) });
-  if (!res.ok) throw new TriggerUnavailable(`embed service ${res.status}`);
-  const data = (await res.json()) as { matches: { score: number; image_hash: string }[] };
-  const strong = data.matches.filter((m) => m.score >= 0.9);
-  return {
-    triggered: strong.length > 0,
-    matchCount: strong.length,
-    platforms: strong.length > 0
-      ? [{ name: "Asli catalog index", category: "web", count: strong.length, url: "" }]
-      : [],
-    source: "qdrant",
-    sources: [],
-  };
-}
-
-/** Demo fallback — labelled `mock`; names real marketplaces so the pitch reads true. */
-function mockTrigger(): TriggerResult {
+/** Explicit offline-dev fallback — labelled `mock`; names real marketplaces so the flow reads true. */
+export function mockTrigger(): TriggerResult {
   const sources = [
     "https://www.flipkart.com/p/itm123",
     "https://www.myntra.com/product/456",
