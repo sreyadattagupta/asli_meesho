@@ -40,9 +40,39 @@ the possession proof always combined. The ONNX artifacts are produced once by
 |---|---|---|
 | `GET /health` | — | backend, cv method (clip/phash), OCR availability, calibration version |
 | `POST /vlm/match` | 1 · Possession-Proof | same_item, code_visible, calibrated confidence, signals |
-| `POST /vlm/measure` | 2 · Smart Sizing | chest/length/waist cm (homography), reference, confidence, signals |
+| `POST /vlm/measure` | 2 · Smart Sizing | `retake`/`provider`, chest/length/waist/**shoulder** cm (homography), `measurements`, reference, confidence + fusion signals |
 | `POST /vlm/verify_delivery` | 4 · Promise Keeper | same_product, cosine, observed attributes, confidence |
 | `POST /vlm/embed` · `POST /vlm/similar` | trigger | CLIP/phash vector · Qdrant similarity |
+
+### Agent-2 Smart Sizing — pipeline + HF-Hub grading
+
+Per-image measurement is deterministic CPU CV (no mock, no fixed size table):
+
+```
+detect.detect_reference_quad (A4/tape corners) → detect.detect_garment_landmarks (silhouette:
+  shoulder/chest/waist/length boxes + fg_frac) → metrology.measure (planar homography px→cm, ONE
+  homography for every span) → measure_engine.measure_image → { retake | measurements + signals }
+```
+
+No reference or collapsed silhouette → **RETAKE** (never a fabricated number); sleeve is left unmeasured
+rather than invented. The web layer fuses N images (median per dim, `lib/sizing.ts`), the seller declares
+the true size, and `grading.py` / `lib/grading.ts` grade a full XS–4XL chart anchored on the measured
+garment. Per-dimension confidence: `calibration.dimension_confidence` (Python) mirrored by
+`web/lib/confidence.ts` — monotone, bounded, deploy-safe.
+
+**Training is a cloud-GPU + Hugging Face Hub workflow, never a local step:**
+
+```bash
+# On Colab / Kaggle / HF (HF_TOKEN + repo env vars set), deps: training/requirements-train.txt
+python training/push_grading_dataset.py     # CSV → versioned HF dataset (datasets.push_to_hub)
+python -m training.fit_grading              # load Hub dataset → fit slopes → eval MAE/RMSE/R² → upload to Hub grader repo
+python training/train_landmarks.py          # (optional) fine-tune the DeepFashion2 landmark seam w/ HF Trainer → push_to_hub → Inference Endpoint
+```
+
+The deployed service/app never fit: `hub.sync_grading()` (`hf_hub_download`) pulls the versioned params
+into the committed cache `models/grading.json` (mirrored to `web/lib/grading.json`), falling back to the
+committed cache when offline — no runtime Hub dependency, no GPU required to serve. See env vars in
+`.env.example` (`HF_TOKEN`, `HF_GRADING_DATASET_REPO`, `HF_GRADER_REPO`, `HF_LANDMARK_*`).
 
 ## Run locally (Ollama backend, $0/call)
 

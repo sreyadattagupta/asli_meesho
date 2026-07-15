@@ -88,6 +88,7 @@ def measure(
     chest=None,
     waist=None,
     reference_corners=None,
+    shoulder=None,
 ) -> dict:
     """Return garment cm + provenance. Uses homography when 4 corners are available."""
     ref = reference if reference in REFERENCE_CM else "a4"
@@ -124,7 +125,7 @@ def measure(
             dst = np.array([[0, 0], [short_cm, 0], [short_cm, long_cm], [0, long_cm]], dtype=np.float64)
         H = homography(corners, dst)
         residual = _residual(H, corners, dst, math.hypot(short_cm, long_cm))
-        return {
+        out = {
             "chest_cm": round(_span(H, chest, "h"), 1),
             "length_cm": round(_span(H, garment, "v"), 1),
             "waist_cm": round(_span(H, waist, "h"), 1),
@@ -132,6 +133,11 @@ def measure(
             "ref_aspect_err": round(ref_aspect_err, 3), "residual": round(residual, 3),
             "box_sanity": round(sanity, 2),
         }
+        # shoulder shares the SAME homography — a real span, only added when a shoulder box is supplied
+        # (never fabricated). Sleeve is not separable from a flat silhouette, so it is left unmeasured.
+        if shoulder is not None:
+            out["shoulder_cm"] = round(_span(H, shoulder, "h"), 1)
+        return out
 
     # ratio fallback — orientation-agnostic cm-per-pixel from the reference box
     scale = ((short_cm / box_short) + (long_cm / box_long)) / 2 if box_short and box_long else 0.0

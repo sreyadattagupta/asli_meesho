@@ -67,19 +67,20 @@ export interface OrchestratorDecision {
   reason: string;
 }
 
-// Attempt cap used ONLY to bound the risk-adaptive confidence nudge (see requiredConfidence). The
-// live proof is NOT lock-out based: a failed attempt always earns a retry with a fresh single-use
-// code (policy: unlimited retries). A live proof that never matches simply never passes — we never
-// permanently block an honest seller who is fumbling their photos.
+// Attempt cap for the live proof. A close miss (right item, code confirmed, but similarity just
+// under the bar) earns a retry with a fresh single-use code; once the seller has burned through
+// MAX_ATTEMPTS the listing is blocked. A CLEAR failure (wrong/replaced item, or the code not
+// confirmed) blocks immediately — an honest seller fumbling framing gets retries; a thief presenting
+// a different product does not.
 export const MAX_ATTEMPTS = 2;
 
 // Same-product confidence floor for Agent 1 (Live Proof). Calibrated to the possession-confidence
-// scale the vlm-service actually emits under the segmentation + crop-CLIP model: a genuine live
-// re-capture of a real garment lands ≈0.90–0.95, a different/rejected item ≤0.45. The bar sits
-// between those bands so a genuine seller clears it while a mismatch never does. The service already
-// hard-gates same_item (crop cosine + colour + code); this is the composed second gate. Adaptive
-// (invariant #7) but never a constant. Configurable without touching logic.
-export const MATCH_THRESHOLD = Number(process.env.NEXT_PUBLIC_MATCH_THRESHOLD ?? 0.82);
+// scale the vlm-service actually emits under the segmentation + crop-CLIP/DINOv2 same-item gate: a
+// genuine live re-capture of a real garment lands ≈0.83–0.95, a different/rejected item ≤0.45. The
+// bar sits between those bands so a genuine seller clears it while a mismatch never does. The service
+// already hard-gates same_item (crop cosine + colour + code); this is the composed second gate.
+// Adaptive (invariant #7) but never a constant. Configurable without touching logic.
+export const MATCH_THRESHOLD = Number(process.env.NEXT_PUBLIC_MATCH_THRESHOLD ?? 0.78);
 
 // Exact user-facing copy required by the Agent-1 spec — surfaced verbatim in the seller UI.
 export const MSG_LIVE_PROOF_MISMATCH =
@@ -152,9 +153,19 @@ export function decide(s: AgentSignals, opts?: { fastLane?: boolean }): Orchestr
     };
   }
 
-  // FAIL — wrong/replaced item or similarity under the bar. Always retry with a FRESH single-use
-  // code (policy: unlimited retries — invariant #3 keeps each code dynamic + single-use + TTL-bound).
-  // The seller is never locked out; a proof that never matches the catalog simply never passes.
+  // CLEAR FAILURE — a different/replaced product (same_item false) or the code not confirmed is not a
+  // fumble, it is a failed possession claim. Block it outright (this is the "thief blocked" branch).
+  // A close miss that has exhausted MAX_ATTEMPTS also blocks — no infinite retry loop.
+  if (!s.sameItem || !s.codeVisible || s.attempt >= MAX_ATTEMPTS) {
+    return {
+      action: "BLOCK",
+      requiredConfidence: bar,
+      reason: MSG_LIVE_PROOF_BLOCKED,
+    };
+  }
+
+  // CLOSE MISS — right item, code confirmed, similarity just under the bar. Retry with a FRESH
+  // single-use code (invariant #3 keeps each code dynamic + single-use + TTL-bound) at a stricter bar.
   return {
     action: "RE_CHALLENGE",
     requiredConfidence: bar,

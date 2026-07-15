@@ -62,9 +62,10 @@ interface SellerStore {
   matchResult?: MatchResult;
   decision?: OrchestratorDecision;
 
-  // sizing (Agent 2)
-  flatlayFile?: File;
-  flatlayPreview?: string;
+  // sizing (Agent 2) — multiple flat-lay photos; the VLM measures each and the best-confidence
+  // shot wins. Parallel arrays: files[i] ↔ previews[i].
+  flatlayFiles: File[];
+  flatlayPreviews: string[];
   measureResult?: MeasureResult;
   sizeChart?: SizeChart;
 
@@ -82,9 +83,10 @@ interface SellerStore {
   /** Apply an orchestrator decision: record it, advance to its nextStep, bump attempts on retry. */
   applyDecision: (d: OrchestratorDecision & { action: OrchestratorAction; nextStep: FlowStep }) => void;
   bumpAttempt: () => void;
-  setFlatlay: (file: File) => void;
+  addFlatlays: (files: File[]) => void;
+  removeFlatlay: (index: number) => void;
   setMeasureResult: (r: MeasureResult) => void;
-  setSizeChart: (c: SizeChart) => void;
+  setSizeChart: (c: SizeChart | undefined) => void;
   setApproved: (approved: boolean) => void;
   reset: () => void;
 }
@@ -179,6 +181,8 @@ export const useSellerStore = create<SellerStore>()(
   ...initialFlow,
   attempt: 0,
   draft: initialDraft,
+  flatlayFiles: [],
+  flatlayPreviews: [],
   setStep: (step) => set({ step }),
   setListingId: (listingId) => set({ listingId }),
   setDraft: (d) => set({ draft: { ...get().draft, ...d } }),
@@ -201,10 +205,21 @@ export const useSellerStore = create<SellerStore>()(
     attempt: d.action === "RE_CHALLENGE" ? get().attempt + 1 : get().attempt,
   }),
   bumpAttempt: () => set({ attempt: get().attempt + 1 }),
-  setFlatlay: (flatlayFile) => {
-    const prev = get().flatlayPreview;
-    if (prev) URL.revokeObjectURL(prev);
-    set({ flatlayFile, flatlayPreview: URL.createObjectURL(flatlayFile) });
+  addFlatlays: (files) => {
+    if (files.length === 0) return;
+    set({
+      flatlayFiles: [...get().flatlayFiles, ...files],
+      flatlayPreviews: [...get().flatlayPreviews, ...files.map((f) => URL.createObjectURL(f))],
+    });
+  },
+  removeFlatlay: (index) => {
+    const previews = get().flatlayPreviews;
+    const gone = previews[index];
+    if (gone) URL.revokeObjectURL(gone);
+    set({
+      flatlayFiles: get().flatlayFiles.filter((_, i) => i !== index),
+      flatlayPreviews: previews.filter((_, i) => i !== index),
+    });
   },
   setMeasureResult: (measureResult) => set({ measureResult }),
   setSizeChart: (sizeChart) => set({ sizeChart }),
@@ -212,8 +227,7 @@ export const useSellerStore = create<SellerStore>()(
   reset: () => {
     const c = get().catalogPreview;
     if (c && c.startsWith("blob:")) URL.revokeObjectURL(c);
-    const f = get().flatlayPreview;
-    if (f) URL.revokeObjectURL(f);
+    get().flatlayPreviews.forEach((p) => URL.revokeObjectURL(p));
     set({
       ...initialFlow,
       attempt: 0,
@@ -226,8 +240,8 @@ export const useSellerStore = create<SellerStore>()(
       challenge: undefined,
       matchResult: undefined,
       decision: undefined,
-      flatlayFile: undefined,
-      flatlayPreview: undefined,
+      flatlayFiles: [],
+      flatlayPreviews: [],
       measureResult: undefined,
       sizeChart: undefined,
       approved: undefined,

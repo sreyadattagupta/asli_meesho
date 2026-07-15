@@ -1,0 +1,7 @@
+# Cloud-GPU / CI training env ONLY — NOT installed in the deployed CPU vlm-service.
+# Agent 2: dataset versioning, grade-slope fit + Hub push, DeepFashion2 landmark fine-tune.
+datasets>=2.19
+huggingface_hub>=0.23
+transformers>=4.41
+torch>=2.2
+numpy

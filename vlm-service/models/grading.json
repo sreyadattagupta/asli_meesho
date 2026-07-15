@@ -1,0 +1,107 @@
+{
+  "version": "grade-1",
+  "sizes": [
+    "XS",
+    "S",
+    "M",
+    "L",
+    "XL",
+    "XXL",
+    "XXXL",
+    "4XL"
+  ],
+  "categories": {
+    "top": {
+      "dims": {
+        "chest_cm": {
+          "slope": 2.5,
+          "intercept": 42.0
+        },
+        "waist_cm": {
+          "slope": 2.5,
+          "intercept": 34.0
+        },
+        "length_cm": {
+          "slope": 2.0,
+          "intercept": 58.0
+        },
+        "shoulder_cm": {
+          "slope": 1.4583,
+          "intercept": 34.7083
+        },
+        "sleeve_cm": {
+          "slope": 1.0,
+          "intercept": 18.0
+        }
+      },
+      "sized_by": "chest_cm"
+    },
+    "kurti": {
+      "dims": {
+        "chest_cm": {
+          "slope": 2.5,
+          "intercept": 44.0
+        },
+        "waist_cm": {
+          "slope": 2.5,
+          "intercept": 36.0
+        },
+        "length_cm": {
+          "slope": 2.0,
+          "intercept": 90.0
+        },
+        "shoulder_cm": {
+          "slope": 1.4583,
+          "intercept": 34.7083
+        },
+        "sleeve_cm": {
+          "slope": 1.0,
+          "intercept": 20.0
+        }
+      },
+      "sized_by": "chest_cm"
+    },
+    "dress": {
+      "dims": {
+        "chest_cm": {
+          "slope": 2.5,
+          "intercept": 42.0
+        },
+        "waist_cm": {
+          "slope": 2.5,
+          "intercept": 33.0
+        },
+        "length_cm": {
+          "slope": 2.5,
+          "intercept": 88.0
+        },
+        "shoulder_cm": {
+          "slope": 1.4583,
+          "intercept": 33.7083
+        },
+        "sleeve_cm": {
+          "slope": 1.0,
+          "intercept": 18.0
+        }
+      },
+      "sized_by": "chest_cm"
+    },
+    "bottom": {
+      "dims": {
+        "chest_cm": {
+          "slope": 2.5,
+          "intercept": 33.0
+        },
+        "waist_cm": {
+          "slope": 2.0,
+          "intercept": 30.0
+        },
+        "length_cm": {
+          "slope": 2.0,
+          "intercept": 92.0
+        }
+      },
+      "sized_by": "waist_cm"
+    }
+  }
+}

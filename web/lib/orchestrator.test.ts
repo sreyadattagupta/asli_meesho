@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   decide, requiredConfidence, stepForAction, MAX_ATTEMPTS, MATCH_THRESHOLD,
-  MSG_LIVE_PROOF_MISMATCH,
+  MSG_LIVE_PROOF_MISMATCH, MSG_LIVE_PROOF_BLOCKED,
 } from "./orchestrator";
 
 const base = {
@@ -24,21 +24,25 @@ describe("decide — strict Agent-1 gate", () => {
   it("AUTO_APPROVE when same product + code + confidence ≥ 90%", () =>
     expect(decide(base).action).toBe("AUTO_APPROVE"));
 
-  it("fails a match just under the confidence bar (retry on first attempt)", () =>
-    expect(decide({ ...base, matchConfidence: MATCH_THRESHOLD - 0.05 }).action).toBe("RE_CHALLENGE"));
+  it("close miss (right item, code ok, under the bar) retries on the first attempt", () =>
+    expect(decide({ ...base, matchConfidence: MATCH_THRESHOLD - 0.05, attempt: 0 }).action)
+      .toBe("RE_CHALLENGE"));
 
-  it("RE_CHALLENGE on a verification failure, with the exact mismatch copy", () => {
+  it("BLOCKs a different item outright (the thief branch), with the exact blocked copy", () => {
     const d = decide({ ...base, sameItem: false, matchConfidence: 0.4, attempt: 0 });
-    expect(d.action).toBe("RE_CHALLENGE");
-    expect(d.reason).toBe(MSG_LIVE_PROOF_MISMATCH);
+    expect(d.action).toBe("BLOCK");
+    expect(d.reason).toBe(MSG_LIVE_PROOF_BLOCKED);
   });
 
-  it("keeps RE_CHALLENGE on repeat failures — unlimited retries, never a lock-out (policy 2A)", () => {
-    for (let attempt = 0; attempt < 6; attempt++) {
-      const d = decide({ ...base, sameItem: false, matchConfidence: 0.4, attempt });
-      expect(d.action).toBe("RE_CHALLENGE");
-      expect(d.reason).toBe(MSG_LIVE_PROOF_MISMATCH);
-    }
+  it("BLOCKs when the code is not confirmed", () =>
+    expect(decide({ ...base, codeVisible: false, attempt: 0 }).action).toBe("BLOCK"));
+
+  it("a close miss blocks once MAX_ATTEMPTS is exhausted (no infinite loop)", () => {
+    const under = { ...base, matchConfidence: MATCH_THRESHOLD - 0.05 };
+    expect(decide({ ...under, attempt: MAX_ATTEMPTS - 1 }).action).toBe("RE_CHALLENGE");
+    const d = decide({ ...under, attempt: MAX_ATTEMPTS });
+    expect(d.action).toBe("BLOCK");
+    expect(d.reason).toBe(MSG_LIVE_PROOF_BLOCKED);
   });
 
   it("a different item never AUTO_APPROVEs", () => {
@@ -68,8 +72,8 @@ describe("decide — fast lane (Task 5.4)", () => {
   });
   it("ineligible path runs the strict gate when fastLane is false", () => {
     expect(decide(base, { fastLane: false }).action).toBe("AUTO_APPROVE");
-    // wrong item → RE_CHALLENGE (retry with a fresh code), never a lock-out
+    // wrong item → BLOCK (a different product is a failed possession claim, not a fumble)
     expect(decide({ ...base, sameItem: false, matchConfidence: 0.1, attempt: 1 }, { fastLane: false }).action)
-      .toBe("RE_CHALLENGE");
+      .toBe("BLOCK");
   });
 });
