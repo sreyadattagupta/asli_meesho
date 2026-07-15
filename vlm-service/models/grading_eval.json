@@ -1,0 +1,107 @@
+{
+  "per_category": {
+    "top": {
+      "chest_cm": {
+        "mae": 0.0,
+        "rmse": 0.0,
+        "r2": 1.0
+      },
+      "waist_cm": {
+        "mae": 0.0,
+        "rmse": 0.0,
+        "r2": 1.0
+      },
+      "length_cm": {
+        "mae": 0.0,
+        "rmse": 0.0,
+        "r2": 1.0
+      },
+      "shoulder_cm": {
+        "mae": 0.1532,
+        "rmse": 0.2124,
+        "r2": 0.996
+      },
+      "sleeve_cm": {
+        "mae": 0.0,
+        "rmse": 0.0,
+        "r2": 1.0
+      }
+    },
+    "kurti": {
+      "chest_cm": {
+        "mae": 0.0,
+        "rmse": 0.0,
+        "r2": 1.0
+      },
+      "waist_cm": {
+        "mae": 0.0,
+        "rmse": 0.0,
+        "r2": 1.0
+      },
+      "length_cm": {
+        "mae": 0.0,
+        "rmse": 0.0,
+        "r2": 1.0
+      },
+      "shoulder_cm": {
+        "mae": 0.1532,
+        "rmse": 0.2124,
+        "r2": 0.996
+      },
+      "sleeve_cm": {
+        "mae": 0.0,
+        "rmse": 0.0,
+        "r2": 1.0
+      }
+    },
+    "dress": {
+      "chest_cm": {
+        "mae": 0.0,
+        "rmse": 0.0,
+        "r2": 1.0
+      },
+      "waist_cm": {
+        "mae": 0.0,
+        "rmse": 0.0,
+        "r2": 1.0
+      },
+      "length_cm": {
+        "mae": 0.0,
+        "rmse": 0.0,
+        "r2": 1.0
+      },
+      "shoulder_cm": {
+        "mae": 0.1532,
+        "rmse": 0.2124,
+        "r2": 0.996
+      },
+      "sleeve_cm": {
+        "mae": 0.0,
+        "rmse": 0.0,
+        "r2": 1.0
+      }
+    },
+    "bottom": {
+      "chest_cm": {
+        "mae": 0.0,
+        "rmse": 0.0,
+        "r2": 1.0
+      },
+      "waist_cm": {
+        "mae": 0.0,
+        "rmse": 0.0,
+        "r2": 1.0
+      },
+      "length_cm": {
+        "mae": 0.0,
+        "rmse": 0.0,
+        "r2": 1.0
+      }
+    }
+  },
+  "overall": {
+    "mae": 0.0255,
+    "rmse": 0.0867,
+    "r2": 1.0
+  }
+}

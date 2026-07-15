@@ -117,3 +117,39 @@ def delivery_confidence(cosine: float, attr_agreement: float) -> float:
     item = _sigmoid(8.0 * (cosine - 0.55))
     conf = 0.10 + 0.55 * item + 0.35 * _clamp01(attr_agreement)
     return round(_clamp01(conf), 4)
+
+
+def dimension_confidence(
+    n_images: int,
+    rel_spread: float,
+    seg_quality: float,
+    landmark_conf: float,
+    ref_aspect_err: float,
+    residual: float,
+    resolution_ok: float = 1.0,
+) -> float:
+    """Agent 2 — per-dimension measurement confidence in [0,1].
+
+    n_images       how many images measured this dimension (more -> higher, with diminishing return).
+    rel_spread     stdev/mean of the per-image cm for this dimension (lower agreement -> higher conf).
+    seg_quality    segmentation foreground quality in [0,1] (segment.fg_frac mapped upstream).
+    landmark_conf  landmark detector confidence in [0,1].
+    ref_aspect_err |detected A4 aspect / true - 1| (lower -> higher).
+    residual       homography re-projection residual (lower -> higher).
+    resolution_ok  in [0,1]; 1 = ample pixels, <1 = small image.
+
+    Monotone in every argument as documented; bounded [0,1]; no branch constants.
+    """
+    coverage = 1.0 - math.exp(-0.9 * max(0, n_images))       # 1->0.59, 2->0.83, 3->0.93, 4->0.97
+    agreement = _sigmoid(14.0 * (0.10 - _clamp01(rel_spread)))  # tight spread -> ~1
+    geometry = _sigmoid(12.0 * (0.18 - ref_aspect_err)) * _sigmoid(10.0 * (0.30 - residual))
+    conf = (
+        0.05
+        + 0.30 * coverage
+        + 0.25 * agreement
+        + 0.20 * geometry
+        + 0.10 * _clamp01(seg_quality)
+        + 0.07 * _clamp01(landmark_conf)
+        + 0.03 * _clamp01(resolution_ok)
+    )
+    return round(_clamp01(conf), 4)

@@ -36,12 +36,32 @@ export interface MeasureSignals {
   box_sanity?: number;
   quality_ok?: boolean;
   blur_var?: number;
+  // Fusion/confidence signals from the CV measure engine (Agent 2), consumed by lib/confidence.ts.
+  seg_quality?: number;
+  landmark_conf?: number;
+  resolution_ok?: number;
 }
 
+/** Per-dimension centimetres measured for one image (only dimensions the CV pipeline resolved). */
+export type MeasuredDims = Partial<
+  Record<"chest_cm" | "waist_cm" | "length_cm" | "shoulder_cm" | "sleeve_cm", number>
+>;
+
 export interface MeasureResult {
-  chest_cm: number;
-  length_cm: number;
-  waist_cm: number;
+  /** True when the image could not be measured reliably — the UI must ask for a retake, NOT show a
+   *  size. Real measurements set this false; a failed/low-confidence detection sets it true. */
+  needs_retake?: boolean;
+  /** Alias of needs_retake from the CV engine; either may be set. */
+  retake?: boolean;
+  /** Human explanation of the measurement or the retake reason. */
+  reason?: string;
+  chest_cm: number | null;
+  length_cm: number | null;
+  waist_cm: number | null;
+  /** Shoulder width from the shared homography, when the silhouette exposed a shoulder line. */
+  shoulder_cm?: number | null;
+  /** Structured per-dimension cm (chest/waist/length/shoulder) — fed to cross-image fusion. */
+  measurements?: MeasuredDims;
   reference_used: string;
   confidence: number;
   /** Explainability signals from the metrology pipeline (service provider). Optional. */
@@ -108,6 +128,17 @@ function failClosedMatch(): MatchResult {
   };
 }
 
+/** A FAIL-CLOSED measurement. When the sizing pipeline is unreachable we must NOT invent a size
+ *  (that was the "always XXXL" hardcoded-mock bug). Return an explicit retake instead. */
+function failRetakeMeasure(): MeasureResult {
+  return {
+    needs_retake: true,
+    reason: "Sizing service is temporarily unavailable — please retake the flat-lay photo and try again.",
+    chest_cm: null, length_cm: null, waist_cm: null,
+    reference_used: "a4", confidence: 0,
+  };
+}
+
 /** Wrap a provider: on error retry once, then degrade. match() FAILS CLOSED (never auto-passes);
  *  the non-security calls (measure/verifyDelivery) degrade to the labelled Mock. */
 export function withDegradation(p: VlmProvider): VlmProvider {
@@ -128,7 +159,8 @@ export function withDegradation(p: VlmProvider): VlmProvider {
     name: p.name,
     // Possession: fail CLOSED — degradation must never turn into a silent auto-accept.
     match: (c, l, code) => guard(() => p.match(c, l, code), async () => failClosedMatch()),
-    measure: (f, r) => guard(() => p.measure(f, r), () => fallback.measure(f, r)),
+    // Sizing: fail to a RETAKE — never a fabricated size (was the hardcoded 96/118/88 → XXXL bug).
+    measure: (f, r) => guard(() => p.measure(f, r), async () => failRetakeMeasure()),
     verifyDelivery: (d, c, pr) =>
       guard(() => p.verifyDelivery(d, c, pr), () => fallback.verifyDelivery(d, c, pr)),
   };

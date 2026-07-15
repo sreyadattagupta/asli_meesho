@@ -47,7 +47,9 @@ import calibration  # noqa: E402
 import clip_embed  # noqa: E402 — CLIP-ONNX semantic gate (same-item)
 import compose  # noqa: E402,F401 — kept for the composite reference; local match now decomposes
 import cv  # noqa: E402
+import detect  # noqa: E402 — deterministic A4 + garment landmark detection (Agent 2)
 import dino_embed  # noqa: E402 — DINOv2-ONNX instance evidence (same-item)
+import measure_engine  # noqa: E402 — Agent 2 single-image measure engine (shoulder + signals)
 import metrology  # noqa: E402
 import instance  # noqa: E402 — weak tertiary ORB corroboration
 import ocr  # noqa: E402
@@ -310,50 +312,113 @@ async def vlm_match(
         }
 
 
+# Below this composed confidence the measurement is not trustworthy — the API asks for a retake
+# instead of returning a size (requirement: never surface an unreliable size).
+_SIZING_RETAKE_FLOOR = 0.55
+
+
 @app.post("/vlm/measure")
 async def vlm_measure(
-    flatlay: UploadFile = File(..., description="Garment laid flat with reference object"),
-    reference_object: str = Form("a4", description="'a4' or 'tape'"),
+    flatlay: UploadFile = File(..., description="Garment laid flat with an A4/card/tape reference"),
+    reference_object: str = Form("a4", description="'a4' | 'card' | 'tape' — a hint; auto-verified"),
 ):
-    """Agent 2 — Smart Sizing. Returns chest_cm / length_cm / waist_cm + signals.
+    """Agent 2 — Smart Sizing. Real per-image measurement, no hardcoded values, no LLM box-guessing.
 
-    Single-view metrology (Criminisi/Reid/Zisserman 2000): the model grounds the reference's four
-    corners plus garment/chest/waist boxes; `metrology.py` fits a planar homography (numpy DLT) and
-    measures cm in the rectified plane — correcting perspective the old reference/garment ratio
-    ignored. Waist is measured, not estimated. Bad reference detection ⇒ low-confidence "retake".
+    Pipeline (all deterministic CV, CPU-only):
+      1. `detect.detect_reference_quad` finds the A4/card/tape by edges→contour→four-corner quad
+         (aspect + brightness verified). No reliable reference ⇒ RETAKE, never a fabricated scale.
+      2. `detect.detect_garment_landmarks` segments the garment (GrabCut) and reads chest/waist/length
+         from the silhouette width profile — landmarks that move with the actual garment shape.
+      3. `metrology.measure` fits a planar homography from the four corners (Criminisi/Reid/Zisserman
+         2000) and converts the landmark pixels → real centimetres in the perspective-corrected plane.
+      4. `calibration.sizing_confidence` scores the fit; below `_SIZING_RETAKE_FLOOR` we return
+         `needs_retake` with the reason, so the caller re-prompts instead of showing a wrong size.
     """
     flatlay_bytes = await _read(flatlay, "flatlay")
     q = cv.quality(flatlay_bytes)
 
-    try:
-        boxes = await vlm_backend.run_vlm(
-            prompts.measure_corners_prompt(reference_object),
-            images=[flatlay_bytes],
-        )
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(502, f"VLM error: {e}") from e
+    ref = detect.detect_reference_quad(flatlay_bytes, reference_object)
+    landmarks = detect.detect_garment_landmarks(flatlay_bytes, ref["bbox"] if ref else None)
 
-    reference_box = _box(boxes.get("reference") or boxes.get("a4_sheet") or boxes.get("a4"))
-    garment = _box(boxes.get("garment"))
-    chest = _box(boxes.get("chest"))
-    waist = _box(boxes.get("waist"))
-    corners = _corners(boxes.get("reference_corners"))
+    def _retake(reason: str) -> dict:
+        return {
+            "needs_retake": True, "retake": True, "provider": "cv", "reason": reason,
+            "chest_cm": None, "length_cm": None, "waist_cm": None, "shoulder_cm": None,
+            "measurements": {},
+            "reference_used": reference_object, "confidence": 0.0,
+            "signals": {"method": "none", "reference_detected": bool(ref),
+                        "garment_detected": bool(landmarks), "quality_ok": q["ok"],
+                        "blur_var": q["blur_var"],
+                        "seg_quality": 0.0, "landmark_conf": 0.0,
+                        "ref_aspect_err": 1.0, "residual": 1.0, "resolution_ok": 0.0},
+        }
 
-    m = metrology.measure(reference_object, reference_box, garment, chest, waist, corners)
+    if not q["ok"]:
+        return _retake(q["reason"])
+    if ref is None:
+        return _retake("No A4 sheet detected next to the garment. Lay a plain A4 sheet flat in the "
+                       "frame for scale and retake.")
+    if landmarks is None or not landmarks["landmark_ok"]:
+        return _retake("Couldn't isolate the garment. Lay it flat on a contrasting surface, fully in "
+                       "frame, and retake.")
+
+    # Coplanarity/scene guard: a detached reference (corner overlay) or an on-body/full-scene photo
+    # must be rejected, not confidently mis-measured (the 46.6 cm on-body-dress failure).
+    from PIL import Image as _PILImage
+    import io as _io
+    _w, _h = _PILImage.open(_io.BytesIO(flatlay_bytes)).size
+    scene = detect.scene_check(ref, landmarks, (_w, _h))
+    if not scene["coplanar_ok"]:
+        r = _retake(scene["reason"])
+        r["signals"].update({"scene_clutter": scene["clutter"],
+                             "garment_height_frac": scene["garment_height_frac"]})
+        return r
+
+    corners = detect._order_corners(ref["corners"])
+    m = metrology.measure(
+        reference_object, ref["bbox"], landmarks["garment"],
+        landmarks["chest"], landmarks["waist"], corners,
+        shoulder=landmarks.get("shoulder"),
+    )
     confidence = calibration.sizing_confidence(m["ref_aspect_err"], m["residual"], m["box_sanity"])
-    # A mis-detected reference or missing boxes must not yield a confident wrong chart.
-    if m["method"] == "none" or m["ref_aspect_err"] > 0.25 or not q["ok"]:
+    if m["method"] == "none" or m["ref_aspect_err"] > 0.25:
         confidence = min(confidence, 0.35)
 
+    if confidence < _SIZING_RETAKE_FLOOR:
+        return _retake(
+            f"Measurement confidence too low ({confidence:.0%}). Flatten the garment and A4 sheet "
+            "on the same surface, shoot straight-on, and retake.")
+
+    # measurements: real cm only (>0); shoulder added when the homography produced it, sleeve left
+    # unmeasured (never fabricated). This object is what the web fusion layer (lib/sizing.ts) consumes.
+    measurements = {k: m[k] for k in ("chest_cm", "length_cm", "waist_cm")
+                    if isinstance(m.get(k), (int, float)) and m[k] > 0}
+    if isinstance(m.get("shoulder_cm"), (int, float)) and m["shoulder_cm"] > 0:
+        measurements["shoulder_cm"] = m["shoulder_cm"]
+
     return {
+        "needs_retake": False,
+        "retake": False,
+        "provider": "cv",
         "chest_cm": m["chest_cm"],
         "length_cm": m["length_cm"],
         "waist_cm": m["waist_cm"],
+        "shoulder_cm": m.get("shoulder_cm"),
+        "measurements": measurements,
         "reference_used": m["reference_used"],
         "confidence": confidence,
+        "reason": (f"Measured from a detected {m['reference_used'].upper()} reference "
+                   f"({m['method']} fit, re-projection residual {m['residual']}); chest "
+                   f"{m['chest_cm']} cm, length {m['length_cm']} cm, waist {m['waist_cm']} cm."),
         "signals": {
             "method": m["method"], "ref_aspect_err": m["ref_aspect_err"],
             "residual": m["residual"], "box_sanity": m["box_sanity"],
+            "reference_detected": True, "reference_aspect_err": ref["aspect_err"],
+            "garment_fg_frac": landmarks["fg_frac"],
+            # measure_engine-style signals consumed by dimension_confidence (web lib/confidence.ts):
+            "seg_quality": measure_engine._seg_quality(landmarks["fg_frac"]),
+            "landmark_conf": 0.9 if landmarks["landmark_ok"] else 0.4,
+            "resolution_ok": 1.0,
             "quality_ok": q["ok"], "blur_var": q["blur_var"],
         },
     }

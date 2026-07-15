@@ -26,7 +26,16 @@ export class MockProvider implements VlmProvider {
   }
 
   async measure(_flatlay: Blob, referenceObject: "a4" | "tape"): Promise<MeasureResult> {
-    return { chest_cm: 96, length_cm: 118, waist_cm: 88, reference_used: referenceObject, confidence: 0.9 };
+    // No hardcoded size. Real measurement needs the CV sizing service (detect.py → metrology). With
+    // no service configured we ask for a retake rather than fabricating a chart (the old 96/118/88
+    // → always-XXXL bug). Configure VLM_PROVIDER=ollama with the vlm-service running to measure.
+    return {
+      needs_retake: true,
+      reason: "Live sizing needs the CV measurement service. Start vlm-service (VLM_PROVIDER=ollama) "
+        + "to measure this garment from the photo.",
+      chest_cm: null, length_cm: null, waist_cm: null,
+      reference_used: referenceObject, confidence: 0,
+    };
   }
 
   async verifyDelivery(delivery: Blob, catalog: Blob, _promise: DeliveryPromiseInput): Promise<DeliveryResult> {

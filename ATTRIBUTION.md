@@ -48,6 +48,9 @@ installed version, license, role in this build, and source. Versions are the one
 | ImageHash | ≥4.3 | BSD-2-Clause | Perceptual-hash trigger fallback when torch/CLIP wheels are unavailable | https://github.com/JohannesBuchner/imagehash |
 | PaddleOCR (+ paddlepaddle) | ≥2.7 | Apache-2.0 | Dedicated code-slip OCR cross-check, fused with the VLM read (Agent 1) — active on the HF Space (py3.11); optional locally (no cp314 wheel) | https://github.com/PaddlePaddle/PaddleOCR |
 | torch + transformers (optional) | latest | BSD-3 / Apache-2.0 | CLIP image embeddings (upgrade path; phash used otherwise) | https://github.com/pytorch/pytorch · https://github.com/huggingface/transformers |
+| huggingface_hub | ≥0.23 | Apache-2.0 | Agent 2 grading: version/host/download the fitted grade params from the HF Hub (`hub.sync_grading`), + landmark Inference Endpoint call. Deployed-safe read-only (no torch) | https://github.com/huggingface/huggingface_hub |
+| datasets (train only) | ≥2.19 | Apache-2.0 | Agent 2: version the grading dataset on the HF Hub + `load_dataset` in the cloud fit. In `training/requirements-train.txt`, NOT the deployed service | https://github.com/huggingface/datasets |
+| transformers + `Trainer` + torch (train only) | ≥4.41 / ≥2.2 | Apache-2.0 / BSD-3 | Agent 2 landmark model fine-tune on cloud GPU (DeepFashion2). `training/requirements-train.txt` only — deployed CPU service never imports them | https://github.com/huggingface/transformers · https://github.com/pytorch/pytorch |
 
 ## External models, runtimes & services
 
@@ -63,6 +66,10 @@ installed version, license, role in this build, and source. Versions are the one
 | Supabase | Free tier | Managed PostgreSQL (deployed store) | https://supabase.com |
 | Vercel | Free tier (Hobby) | Deployment (web) | https://vercel.com |
 | Hugging Face Spaces | Free tier (CPU, Docker SDK) | Hosts the CV/VLM service so the deployed demo runs the real pipeline (cosine, homography, OCR) | https://huggingface.co/spaces |
+| Hugging Face Hub — dataset `garment-grading-specs` | own repo (from ISO 8559 size charts) | Versioned Agent 2 grading dataset (`datasets`) — input to the cloud grade-slope fit | https://huggingface.co/datasets |
+| Hugging Face Hub — model `garment-size-grader` | own repo, MIT | Fitted per-size grade slopes (`grading.json`) hosted + versioned; deployed app/service sync a committed cache | https://huggingface.co/models |
+| DeepFashion2 (`zyuzuguldu/deepfashion2-upper-body-masks`) | Apache-2.0 | Garment segmentation masks — training data for the Agent 2 landmark seam (HF `Trainer`, cloud GPU); full landmarks `sahirp/deepfashion2` (MIT) | https://huggingface.co/datasets/zyuzuguldu/deepfashion2-upper-body-masks |
+| HF Inference Endpoint — `garment-landmark-seg` | own repo (RTMPose/YOLO11-seg lineage) | Optional GPU landmark seam; CPU silhouette is the default deployed path | https://huggingface.co/models |
 | Web Speech API | Browser built-in | Voice-guided seller steps (client-side) | https://developer.mozilla.org/docs/Web/API/Web_Speech_API |
 
 ## Research references (cited in-product and in the design)
