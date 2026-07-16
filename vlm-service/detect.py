@@ -249,6 +249,9 @@ def detect_garment_landmarks(data: bytes, reference_bbox: list | None = None) ->
     sy, sxl, sxr = widest_in(0.0, 0.18)
     cy, cxl, cxr = widest_in(0.12, 0.45)
     wy, wxl, wxr = narrowest_in(0.45, 0.72)
+    # Hip = widest run in the lower body (dresses / bottoms); neck = narrowest run in the collar band.
+    hy, hxl, hxr = widest_in(0.55, 0.95)
+    ny, nxl, nxr = narrowest_in(0.0, 0.12)
 
     # Background edge density: exclude the garment box too, then measure edges in what remains.
     bg_mask[y0:y1, x0:x1] = 0
@@ -261,6 +264,8 @@ def detect_garment_landmarks(data: bytes, reference_bbox: list | None = None) ->
         "shoulder": [sxl * s, sy * s, sxr * s, sy * s],
         "chest": [cxl * s, cy * s, cxr * s, cy * s],
         "waist": [wxl * s, wy * s, wxr * s, wy * s],
+        "hip": [hxl * s, hy * s, hxr * s, hy * s],
+        "neck": [nxl * s, ny * s, nxr * s, ny * s],
         "fg_frac": round(frac, 3),
         "bg_edge_density": round(bg_edge_density, 4),
         "landmark_ok": bool(0.08 <= frac <= 0.95),
