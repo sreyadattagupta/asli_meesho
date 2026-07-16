@@ -13,7 +13,7 @@ from __future__ import annotations
 import csv, json, os, pathlib, tempfile
 import numpy as np
 
-DIMS = ("chest_cm", "waist_cm", "length_cm", "shoulder_cm", "sleeve_cm")
+DIMS = ("chest_cm", "waist_cm", "length_cm", "shoulder_cm", "sleeve_cm", "hip_cm", "neck_cm")
 SIZES = ["XS", "S", "M", "L", "XL", "XXL", "XXXL", "4XL"]
 SIZED_BY = {"top": "chest_cm", "kurti": "chest_cm", "dress": "chest_cm", "bottom": "waist_cm"}
 _HERE = pathlib.Path(__file__).resolve().parent.parent   # vlm-service/

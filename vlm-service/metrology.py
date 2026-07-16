@@ -89,6 +89,8 @@ def measure(
     waist=None,
     reference_corners=None,
     shoulder=None,
+    hip=None,
+    neck=None,
 ) -> dict:
     """Return garment cm + provenance. Uses homography when 4 corners are available."""
     ref = reference if reference in REFERENCE_CM else "a4"
@@ -137,11 +139,15 @@ def measure(
         # (never fabricated). Sleeve is not separable from a flat silhouette, so it is left unmeasured.
         if shoulder is not None:
             out["shoulder_cm"] = round(_span(H, shoulder, "h"), 1)
+        if hip is not None:
+            out["hip_cm"] = round(_span(H, hip, "h"), 1)      # hip / lower-body width (dresses, bottoms)
+        if neck is not None:
+            out["neck_cm"] = round(_span(H, neck, "h"), 1)    # neckline / collar width
         return out
 
     # ratio fallback — orientation-agnostic cm-per-pixel from the reference box
     scale = ((short_cm / box_short) + (long_cm / box_long)) / 2 if box_short and box_long else 0.0
-    return {
+    out = {
         "chest_cm": round((chest[2] - chest[0]) * scale, 1),
         "length_cm": round((garment[3] - garment[1]) * scale, 1),
         "waist_cm": round((waist[2] - waist[0]) * scale, 1),
@@ -149,3 +155,8 @@ def measure(
         "ref_aspect_err": round(ref_aspect_err, 3), "residual": 0.25,  # unknown plane → moderate prior
         "box_sanity": round(sanity, 2),
     }
+    if hip is not None:
+        out["hip_cm"] = round((hip[2] - hip[0]) * scale, 1)
+    if neck is not None:
+        out["neck_cm"] = round((neck[2] - neck[0]) * scale, 1)
+    return out

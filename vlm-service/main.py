@@ -487,6 +487,7 @@ async def vlm_measure(
         reference_object, ref["bbox"], landmarks["garment"],
         landmarks["chest"], landmarks["waist"], corners,
         shoulder=landmarks.get("shoulder"),
+        hip=landmarks.get("hip"), neck=landmarks.get("neck"),
     )
     confidence = calibration.sizing_confidence(m["ref_aspect_err"], m["residual"], m["box_sanity"])
     if m["method"] == "none" or m["ref_aspect_err"] > 0.25:
@@ -499,10 +500,8 @@ async def vlm_measure(
 
     # measurements: real cm only (>0); shoulder added when the homography produced it, sleeve left
     # unmeasured (never fabricated). This object is what the web fusion layer (lib/sizing.ts) consumes.
-    measurements = {k: m[k] for k in ("chest_cm", "length_cm", "waist_cm")
+    measurements = {k: m[k] for k in ("chest_cm", "length_cm", "waist_cm", "shoulder_cm", "hip_cm", "neck_cm")
                     if isinstance(m.get(k), (int, float)) and m[k] > 0}
-    if isinstance(m.get("shoulder_cm"), (int, float)) and m["shoulder_cm"] > 0:
-        measurements["shoulder_cm"] = m["shoulder_cm"]
 
     # Garment-TYPE detection — PRIMARY is the fine-tuned HF classifier (dsreya/garment-type-classifier,
     # trained on Colab GPU). Falls back to the VLM read, then None. Optional metadata: never blocks or
