@@ -11,6 +11,7 @@ import { useVoiceGuide } from "@/lib/useVoiceGuide";
 import { toSizeChart } from "@/lib/sizing";
 import type { SizeChart } from "@/lib/sizing";
 import { gradeChart, GRADE_SIZES, type GradeDim, type GeneratedChart } from "@/lib/grading";
+import { exportChartJSON, exportChartCSV, exportChartPDF } from "@/lib/chartExport";
 import GuidedSizingCamera from "./GuidedSizingCamera";
 
 // The declared-size selector offers the graded size ladder (XS–4XL), minus the non-apparel "Free Size".
@@ -432,6 +433,25 @@ export default function SizingStep() {
             <span className="font-mono font-bold tabular-nums text-asli-green">
               {Math.round(graded.confidence.overall * 100)}%
             </span>
+          </div>
+
+          {/* Download the AI-generated chart — JSON / CSV / PDF. */}
+          <div className="mt-3 flex flex-wrap gap-2">
+            <span className="w-full text-[11px] uppercase tracking-wide text-white/35">Download size chart</span>
+            {([
+              { label: "JSON", fn: exportChartJSON },
+              { label: "CSV", fn: exportChartCSV },
+              { label: "PDF", fn: exportChartPDF },
+            ] as const).map(({ label, fn }) => (
+              <button
+                key={label}
+                type="button"
+                onClick={() => fn(graded.chart, { garmentType, category, confidence: graded.confidence.overall })}
+                className="flex-1 rounded-lg border border-white/10 bg-white/[0.04] py-2 text-xs font-semibold text-white/70 transition hover:border-asli-violet/50 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-asli-violet"
+              >
+                {label}
+              </button>
+            ))}
           </div>
 
           <button className="btn-primary mt-4 w-full" onClick={() => setStep("review")}>

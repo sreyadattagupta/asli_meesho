@@ -69,6 +69,7 @@ import prompts  # noqa: E402
 import same_item  # noqa: E402 — CLIP(ONNX) same-item gate + DINOv2 evidence
 import siglip_embed  # noqa: E402 — PRIMARY same-product gate: SigLIP embedding (HF Hub, loaded once)
 import garment_type as garment_clf  # noqa: E402 — Agent-2 garment-type: fine-tuned HF classifier (Colab-trained)
+import clothes_seg  # noqa: E402 — clothing segmentation (SegFormer, HF Hub) — primary garment mask
 import segment  # noqa: E402 — garment segmentation (crop background before CLIP)
 import vlm_backend  # noqa: E402
 from agent1.pipeline import verify as agent1_verify  # noqa: E402
@@ -118,11 +119,18 @@ async def lifespan(app: FastAPI):
     # Pre-load the model in the background so the first real /vlm call is warm
     # (avoids the cold-load 500). Non-blocking — the server accepts traffic now.
     asyncio.create_task(ollama_client.warm())
-    # Load the SigLIP same-product model once, off-thread so it doesn't block startup. Until it's
-    # ready, /vlm/match transparently uses the ONNX gate; it switches to SigLIP as soon as it loads.
-    asyncio.create_task(asyncio.to_thread(siglip_embed.warmup))
-    # Load the fine-tuned garment-type classifier once, off-thread (Agent-2 detected garment type).
-    asyncio.create_task(asyncio.to_thread(garment_clf.warmup))
+    # Warm the three torch HF models SEQUENTIALLY in one background thread — loading them concurrently
+    # spikes memory past the limit and OOMs the container (each from_pretrained allocates temp buffers).
+    # One-at-a-time keeps the peak bounded; until each is ready the pipeline uses its documented fallback.
+    def _warm_hf_models() -> None:
+        for name, warm in (("siglip", siglip_embed.warmup),
+                           ("garment-type", garment_clf.warmup),
+                           ("clothes-seg", clothes_seg.warmup)):
+            try:
+                warm()
+            except Exception as e:  # noqa: BLE001 — one model failing must not stop the others
+                _mlog.warning("warmup %s failed: %s", name, e)
+    asyncio.create_task(asyncio.to_thread(_warm_hf_models))
     yield
 
 
@@ -213,6 +221,11 @@ async def health():
             "model": garment_clf.MODEL_ID,
             "loaded": garment_clf._state.get("loaded", False),
             "ok": garment_clf._state.get("ok", False),
+        },
+        "clothes_seg_model": {          # SegFormer clothing segmentation (HF Hub) — primary garment mask
+            "model": clothes_seg.MODEL_ID,
+            "loaded": clothes_seg._state.get("loaded", False),
+            "ok": clothes_seg._state.get("ok", False),
         },
         "calibration_version": calibration.CALIBRATION_VERSION,
     }

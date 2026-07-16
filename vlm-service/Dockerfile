@@ -23,6 +23,15 @@ RUN pip install --no-cache-dir torch torchvision --index-url https://download.py
 
 COPY . .
 
+# Agent-1 ONNX backbones (CLIP + DINOv2, ~420MB) are hosted on the HF Hub, NOT in the Cloud Build
+# source upload (that upload times out at ~450MB / 300s on a home uplink). Download them into models/
+# at build time. Public repo → no token needed.
+RUN python -c "from huggingface_hub import snapshot_download; snapshot_download('dsreya/asli-onnx-backbones', local_dir='/tmp/onnx')" \
+    && cp -r /tmp/onnx/clip-vit-b32 models/clip-vit-b32 \
+    && cp -r /tmp/onnx/dinov2-small models/dinov2-small \
+    && rm -rf /tmp/onnx \
+    && ls -la models/clip-vit-b32 models/dinov2-small
+
 # Generative reads go to Gemini (no GPU); set GEMINI_API_KEY + ALLOWED_ORIGINS as platform secrets.
 # The container listens on $PORT so it works on both HF Spaces (7860) and Cloud Run (injects PORT=8080).
 ENV VLM_BACKEND=gemini \

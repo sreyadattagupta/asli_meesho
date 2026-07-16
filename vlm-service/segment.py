@@ -53,6 +53,17 @@ def segment_garment(data: bytes, zero_bg: bool = True) -> dict:
     which is background-robust and whose features degrade on out-of-distribution black-matted inputs
     (measured: zeroing compressed DINOv2 same-instance cosine and produced degenerate embeddings).
     """
+    # PRIMARY: SegFormer clothing segmentation (mattmdjaga/segformer_b2_clothes, HF Hub) — isolates the
+    # garment from background/skin/props far better than GrabCut. Falls back to GrabCut below if the
+    # model is unavailable or found too little garment. Respects zero_bg (DINOv2 wants natural pixels).
+    try:
+        import clothes_seg
+        seg = clothes_seg.garment_crop(data, zero_bg=zero_bg)
+        if seg is not None:
+            return {"bytes": seg["bytes"], "method": seg["method"], "fg_frac": seg["fg_frac"]}
+    except Exception:  # noqa: BLE001 — never let the seam break the classic path
+        pass
+
     img = _open(data)
     img.thumbnail((_MAX_SIDE, _MAX_SIDE))
     try:
