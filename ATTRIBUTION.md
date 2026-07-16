@@ -63,7 +63,7 @@ installed version, license, role in this build, and source. Versions are the one
 | SerpAPI (Google Lens) | Commercial (free tier, cached, mockable) | Reverse-image TRIGGER (never a verdict) | https://serpapi.com |
 | catbox.moe | Free service | Keyless temp image host for SerpAPI fetch-by-URL | https://catbox.moe |
 | Phone OTP + JWT (in-house) | — | Phone-number sign-in (demo OTP) + signed session (HMAC-SHA256 via node:crypto, no new dep) + RBAC | — |
-| Supabase | Free tier | Managed PostgreSQL (deployed store) | https://supabase.com |
+| Supabase | Free tier | Managed PostgreSQL (deployed store) + Storage bucket `product-images` for catalog/flat-lay/live photo bytes (public read, server-side write) | https://supabase.com |
 | Vercel | Free tier (Hobby) | Deployment (web) | https://vercel.com |
 | Hugging Face Spaces | Free tier (CPU, Docker SDK) | Hosts the CV/VLM service so the deployed demo runs the real pipeline (cosine, homography, OCR) | https://huggingface.co/spaces |
 | Hugging Face Hub — dataset `garment-grading-specs` | own repo (from ISO 8559 size charts) | Versioned Agent 2 grading dataset (`datasets`) — input to the cloud grade-slope fit | https://huggingface.co/datasets |

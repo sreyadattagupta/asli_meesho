@@ -10,6 +10,9 @@ import type {
 
 type Row = Record<string, unknown>;
 
+/** Storage bucket for product imagery — public read (these are shop photos), server-side write. */
+const IMAGE_BUCKET = "product-images";
+
 // ---- camelCase ↔ snake_case mappers ------------------------------------
 
 const userFromDb = (r: Row): User => ({
@@ -222,11 +225,44 @@ export class SupabaseRepo implements Repo {
   }
 
   // images
-  addImage(i: Omit<ProductImage, "id">) {
+  async addImage(i: Omit<ProductImage, "id">) {
+    const url = await this.offloadDataUrl(i.url, i.kind);
     return this.one(this.sb.from("product_images").insert({
-      listing_id: i.listingId, url: i.url, image_hash: i.imageHash,
+      listing_id: i.listingId, url, image_hash: i.imageHash,
       embedding_id: i.embeddingId ?? null, kind: i.kind,
     }).select().single(), imageFromDb);
+  }
+
+  /**
+   * Move an inline `data:` capture into Storage and return its public URL; pass anything else through.
+   *
+   * Callers hand us `data:image/jpeg;base64,...` because that is what a browser capture serialises to.
+   * Writing it to a Postgres column made every row ~937 KB: 33.7 MB of image bytes sat in the table,
+   * every read that touched `url` paid for it, and it could never be CDN-cached. Bytes belong in
+   * Storage; the column holds a reference.
+   *
+   * Storage failure falls back to the inline URL — a slow image beats losing a seller's proof photo.
+   */
+  private async offloadDataUrl(url: string, kind: ProductImage["kind"]): Promise<string> {
+    if (!url.startsWith("data:")) return url;
+    const m = /^data:([^;,]+)(;base64)?,(.*)$/s.exec(url);
+    if (!m) return url;
+    const [, mime, isBase64, payload] = m;
+    try {
+      const bytes = isBase64
+        ? Buffer.from(payload, "base64")
+        : Buffer.from(decodeURIComponent(payload), "utf8");
+      const ext = (mime.split("/")[1] ?? "jpg").replace(/[^a-z0-9]/gi, "");
+      const path = `${kind}/${crypto.randomUUID()}.${ext}`;
+      const { error } = await this.sb.storage.from(IMAGE_BUCKET).upload(path, bytes, {
+        contentType: mime,
+        cacheControl: "31536000", // content-addressed by a fresh uuid per upload ⇒ never mutates
+      });
+      if (error) throw new Error(error.message);
+      return this.sb.storage.from(IMAGE_BUCKET).getPublicUrl(path).data.publicUrl;
+    } catch {
+      return url;
+    }
   }
   listImages(listingId: string) {
     return this.many(this.sb.from("product_images").select().eq("listing_id", listingId), imageFromDb);
