@@ -62,22 +62,22 @@ describe("agentic flows", () => {
     expect(decision.action).toBe("AUTO_APPROVE");
   });
 
-  it("thief: a wrong-item attempt BLOCKs the listing (the money-shot branch)", async () => {
+  it("wrong-item attempt RE_CHALLENGEs (retry) — never a hard block", async () => {
     const { listing } = await newSellerListing();
     const repo = await repoReady();
-    // A thief presenting a different product is a failed possession claim → blocked outright.
+    // A different product is a mismatch → the seller re-captures; the listing is NOT blocked.
     await repo.addCheck({
       listingId: listing.id, agent: "possession",
       payload: { same_item: false, code_visible: false, matchCount: 5 },
       confidence: 0.1, action: "recorded", requiredConfidence: 0, reason: "different product",
     });
     const decision = await (await json(ANALYZE, { listingId: listing.id })).json();
-    expect(decision.action).toBe("BLOCK");
-    expect(decision.nextStep).toBe("review");
-    expect((await repo.getListing(listing.id))!.status).toBe("blocked");
+    expect(decision.action).toBe("RE_CHALLENGE");
+    expect(decision.nextStep).toBe("challenge");
+    expect((await repo.getListing(listing.id))!.status).not.toBe("blocked");
   });
 
-  it("code never confirmed across attempts ⇒ BLOCK", async () => {
+  it("mismatch past the retry budget ⇒ ESCALATE_HUMAN (human review, never blocked)", async () => {
     const { listing } = await newSellerListing();
     const repo = await repoReady();
     for (let i = 0; i <= MAX_ATTEMPTS + 3; i++) {
@@ -88,8 +88,8 @@ describe("agentic flows", () => {
       });
     }
     const decision = await (await json(ANALYZE, { listingId: listing.id })).json();
-    expect(decision.action).toBe("BLOCK");
-    expect((await repo.getListing(listing.id))!.status).toBe("blocked");
+    expect(decision.action).toBe("ESCALATE_HUMAN");
+    expect((await repo.getListing(listing.id))!.status).toBe("escalated");
   });
 
   it("commerce: order → advance×2 → Promise Keeper verdict persisted", async () => {

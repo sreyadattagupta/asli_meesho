@@ -13,9 +13,20 @@ Run:
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import re
 from contextlib import asynccontextmanager
+
+# Agent-2 Smart Sizing structured logs (surface in Cloud Run) — prove the pipeline ran, not a fallback.
+# Attach our own stderr handler: uvicorn owns the root logger, so basicConfig alone is swallowed.
+_mlog = logging.getLogger("agent2.measure")
+_mlog.setLevel(logging.INFO)
+if not _mlog.handlers:
+    _mh = logging.StreamHandler()
+    _mh.setFormatter(logging.Formatter("%(asctime)s [agent2] %(levelname)s %(message)s"))
+    _mlog.addHandler(_mh)
+    _mlog.propagate = False
 
 
 def _load_dotenv() -> None:
@@ -56,6 +67,8 @@ import ocr  # noqa: E402
 import ollama_client  # noqa: E402
 import prompts  # noqa: E402
 import same_item  # noqa: E402 — CLIP(ONNX) same-item gate + DINOv2 evidence
+import siglip_embed  # noqa: E402 — PRIMARY same-product gate: SigLIP embedding (HF Hub, loaded once)
+import garment_type as garment_clf  # noqa: E402 — Agent-2 garment-type: fine-tuned HF classifier (Colab-trained)
 import segment  # noqa: E402 — garment segmentation (crop background before CLIP)
 import vlm_backend  # noqa: E402
 from agent1.pipeline import verify as agent1_verify  # noqa: E402
@@ -105,6 +118,11 @@ async def lifespan(app: FastAPI):
     # Pre-load the model in the background so the first real /vlm call is warm
     # (avoids the cold-load 500). Non-blocking — the server accepts traffic now.
     asyncio.create_task(ollama_client.warm())
+    # Load the SigLIP same-product model once, off-thread so it doesn't block startup. Until it's
+    # ready, /vlm/match transparently uses the ONNX gate; it switches to SigLIP as soon as it loads.
+    asyncio.create_task(asyncio.to_thread(siglip_embed.warmup))
+    # Load the fine-tuned garment-type classifier once, off-thread (Agent-2 detected garment type).
+    asyncio.create_task(asyncio.to_thread(garment_clf.warmup))
     yield
 
 
@@ -136,6 +154,16 @@ MATCH_SOFT_HI = float(os.getenv("MATCH_SOFT_HI", "0.80"))
 # reused catalog image, not a live capture (anti-spoof — separate from same-item).
 REUSE_CLIP = float(os.getenv("REUSE_CLIP", "0.985"))
 REUSE_PHASH = float(os.getenv("REUSE_PHASH", "0.92"))
+# Live-Proof VLM tie-breaker band. A genuine same-product live photo can dip below the CLIP bar
+# purely from angle/lighting/distance (the calibration file flags 0.78 as brittle on real captures).
+# When CLIP FAILS but the score is in [LO, HI), a VLM compares ONLY intrinsic features
+# (pattern/colour/print/logo/style), ignoring capture conditions, and can rescue the genuine seller.
+# Recall-only: the VLM never vetoes a CLIP pass — fraud stays gated by CLIP<LO, code, reuse, review.
+SAME_ITEM_VLM_LO = float(os.getenv("SAME_ITEM_VLM_LO", "0.55"))
+SAME_ITEM_VLM_HI = float(os.getenv("SAME_ITEM_VLM_HI", "0.88"))
+# SigLIP same-product cosine PASS bar (Live Proof primary gate). Seller spec starts at 0.82; tune on
+# real cosines from the deployed endpoint. At/above ⇒ same product (PASS); below ⇒ retry (never block).
+SIGLIP_THRESHOLD = float(os.getenv("SIGLIP_THRESHOLD", "0.82"))
 
 
 async def _read(upload: UploadFile, field: str) -> bytes:
@@ -167,12 +195,25 @@ async def health():
         "num_gpu": ollama_client._NUM_GPU,     # what the service actually sends to Ollama
         "keep_alive": ollama_client._KEEP_ALIVE,
         "cv_method": cv_method,          # clip | phash | unavailable (legacy embed.py path)
-        "same_item_gate": {              # Agent-1 same-item backbones (ONNX, no torch)
+        "same_item_gate": {              # Agent-1 same-item backbones
+            "primary": "siglip" if siglip_embed._state.get("ok") else (
+                "clip_onnx" if same_item.available() else "phash"),
+            "siglip": {                  # PRIMARY Live-Proof gate (HF Hub, loaded once at startup)
+                "model": siglip_embed.MODEL_ID,
+                "loaded": siglip_embed._state.get("loaded", False),
+                "ok": siglip_embed._state.get("ok", False),
+                "threshold": SIGLIP_THRESHOLD,
+            },
             "available": same_item.available(),
-            "clip_onnx": clip_embed.available(),      # semantic gate
+            "clip_onnx": clip_embed.available(),      # semantic fallback gate
             "dinov2_onnx": dino_embed.available(),    # reported instance evidence
         },
         "ocr_available": ocr.available(),
+        "garment_type_model": {         # Agent-2 fine-tuned garment-type classifier (Colab-trained, HF Hub)
+            "model": garment_clf.MODEL_ID,
+            "loaded": garment_clf._state.get("loaded", False),
+            "ok": garment_clf._state.get("ok", False),
+        },
         "calibration_version": calibration.CALIBRATION_VERSION,
     }
 
@@ -236,7 +277,28 @@ async def vlm_match(
         color_sim = instance.color_similarity(seg_cat["bytes"], seg_liv["bytes"])  # reported evidence
         orb = instance.good_matches(seg_cat["bytes"], seg_liv["bytes"])            # reported evidence
 
-        if same_item.available():
+        # PRIMARY same-product gate: SigLIP image-embedding cosine on the BACKGROUND-ZEROED garment
+        # crops (production HF model, loaded once from the Hub — siglip_embed.py). Keying on the
+        # segmented garment + a learned embedding makes it robust to background, lighting, pose, angle
+        # and rotation and sensitive to colour/pattern/print/logo/texture/shape — no raw-pixel compare.
+        # Cascade: SigLIP → CLIP-ONNX gate → perceptual hash, so the endpoint always degrades, never crashes.
+        gate = None
+        sig_cos = None
+        if siglip_embed.available():
+            ec = siglip_embed.embed(seg_cat["bytes"])
+            el = siglip_embed.embed(seg_liv["bytes"])
+            if ec is not None and el is not None:
+                sig_cos = round(siglip_embed.cosine(ec, el), 4)
+                same = bool(sig_cos >= SIGLIP_THRESHOLD)
+                gate_score = sig_cos
+                method = "siglip"
+                item_strength = calibration.same_item_strength(sig_cos, SIGLIP_THRESHOLD)
+                gate = {"gate_score": sig_cos, "threshold": SIGLIP_THRESHOLD, "dino_evidence": None,
+                        "dino_signal": None, "gate_signal": f"siglip:{siglip_embed.MODEL_ID.split('/')[-1]}",
+                        "degraded": False}
+                match_desc = (f"SigLIP same-product cosine {sig_cos:.3f} "
+                              f"({'≥' if same else '<'} {SIGLIP_THRESHOLD:.2f} bar)")
+        if gate is None and same_item.available():
             gate = same_item.decide(catalog_bytes, live_bytes)
             same = gate["same_item"]
             gate_score = gate["gate_score"] if gate["gate_score"] is not None else 0.0
@@ -246,9 +308,9 @@ async def vlm_match(
                           f"({'≥' if same else '<'} {gate['threshold']:.2f} bar)"
                           + (f", DINOv2 evidence {gate['dino_evidence']:.2f}"
                              if gate['dino_evidence'] is not None else ""))
-        else:
-            # No ONNX backbone available → perceptual-hash fallback (weak; never passes on hash alone
-            # without a non-trivial similarity). Kept only so the endpoint degrades rather than crashes.
+        if gate is None:
+            # Neither SigLIP nor an ONNX backbone available → perceptual-hash fallback (weak; never
+            # passes on hash alone without a non-trivial similarity). Degrade rather than crash.
             sim = cv.similarity(seg_cat["bytes"], seg_liv["bytes"])
             gate_score = sim["score"]
             same = bool(gate_score >= MATCH_SOFT_HI)
@@ -257,6 +319,32 @@ async def vlm_match(
             gate = {"gate_score": gate_score, "threshold": MATCH_SOFT_HI, "dino_evidence": None,
                     "dino_signal": None, "gate_signal": method, "degraded": True}
             match_desc = f"phash fallback {gate_score:.2f} (no ONNX backbone)"
+
+        # VLM feature-comparison tie-breaker (Live Proof recall fix). CLIP is robust to background
+        # (it runs on zeroed-bg crops) but still dips with angle/lighting/distance, so a GENUINE
+        # same-product capture can fall just under the bar. When the embedding gate FAILS inside the
+        # ambiguous band, ask the VLM to judge same-vs-different from INTRINSIC features only —
+        # pattern/colour/print/logo/style — explicitly ignoring background, lighting, angle, hands.
+        # It can only PROMOTE a borderline fail to pass (recall-only); it never vetoes a CLIP pass,
+        # so fraud protection (CLIP<LO, challenge code, reuse/liveness, human review) is unchanged.
+        vlm_compare = None
+        if method in ("clip", "dinov2-fallback") and not same and SAME_ITEM_VLM_LO <= gate_score < SAME_ITEM_VLM_HI:
+            try:
+                vc = await vlm_backend.run_vlm(
+                    prompts.same_item_compare_prompt(), [catalog_bytes, live_bytes])
+                same_vlm = bool(vc.get("same_product"))
+                vlm_conf = float(vc.get("confidence", 0.0))
+                vlm_compare = {"same_product": same_vlm, "confidence": round(vlm_conf, 3),
+                               "reason": str(vc.get("reason", ""))[:200]}
+                if same_vlm:
+                    same = True
+                    method = f"{method}+vlm-compare"
+                    # Honest strength: passed on VLM features below the CLIP bar — solid, not maxed.
+                    item_strength = max(item_strength, min(0.85, 0.55 + 0.30 * vlm_conf))
+                    match_desc = (f"{match_desc}; VLM feature-match {vlm_conf:.2f} "
+                                  f"(pattern/colour/print/logo, capture conditions ignored)")
+            except Exception as _vc_err:  # noqa: BLE001 — VLM down/quota → keep the CLIP gate result
+                vlm_compare = {"error": type(_vc_err).__name__}
 
         same_item_flag = bool(same)
         if not same_item_flag:
@@ -279,8 +367,9 @@ async def vlm_match(
             reason = (f"Same product: {match_desc}; code entered (text-verified); "
                       f"focus {q['blur_var']:.0f}.")
         else:
-            reason = (f"Different product: {match_desc}; code entered (text-verified); "
-                      f"focus {q['blur_var']:.0f}.")
+            # Not a hard block — the seller re-captures. Message per the Live-Proof spec.
+            reason = (f"Product mismatch detected. Please capture the same product again. "
+                      f"({match_desc})")
 
         return {
             "same_item": same_item_flag,
@@ -298,6 +387,8 @@ async def vlm_match(
                 "seg_catalog": seg_cat["method"], "seg_live": seg_liv["method"],
                 "orb_good": orb.get("good", 0), "orb_texture_ok": orb.get("texture_ok", False),
                 "gate_degraded": gate.get("degraded", False),
+                "siglip_cosine": sig_cos,  # SigLIP same-product cosine (None if SigLIP unavailable)
+                "vlm_compare": vlm_compare,  # feature-based tie-breaker result (None if not invoked)
             },
         }
     except HTTPException:
@@ -335,12 +426,16 @@ async def vlm_measure(
          `needs_retake` with the reason, so the caller re-prompts instead of showing a wrong size.
     """
     flatlay_bytes = await _read(flatlay, "flatlay")
+    _mlog.info("measure: START — %d bytes, reference_hint=%s", len(flatlay_bytes), reference_object)
     q = cv.quality(flatlay_bytes)
 
     ref = detect.detect_reference_quad(flatlay_bytes, reference_object)
     landmarks = detect.detect_garment_landmarks(flatlay_bytes, ref["bbox"] if ref else None)
+    _mlog.info("measure: preprocess — quality_ok=%s reference_detected=%s garment_detected=%s",
+               q["ok"], bool(ref), bool(landmarks))
 
     def _retake(reason: str) -> dict:
+        _mlog.warning("measure: RETAKE (no fabricated size) — %s", reason)
         return {
             "needs_retake": True, "retake": True, "provider": "cv", "reason": reason,
             "chest_cm": None, "length_cm": None, "waist_cm": None, "shoulder_cm": None,
@@ -396,10 +491,29 @@ async def vlm_measure(
     if isinstance(m.get("shoulder_cm"), (int, float)) and m["shoulder_cm"] > 0:
         measurements["shoulder_cm"] = m["shoulder_cm"]
 
+    # Garment-TYPE detection — PRIMARY is the fine-tuned HF classifier (dsreya/garment-type-classifier,
+    # trained on Colab GPU). Falls back to the VLM read, then None. Optional metadata: never blocks or
+    # fabricates the measurement.
+    garment_type = None
+    gt = garment_clf.classify(flatlay_bytes)
+    if gt:
+        garment_type = gt["type"]
+        _mlog.info("measure: garment-type=%s (%.2f) via trained HF classifier", gt["type"], gt["confidence"])
+    else:
+        try:
+            desc = await vlm_backend.run_vlm(prompts.describe_catalog_prompt(), [flatlay_bytes])
+            garment_type = (str(desc.get("type") or "").strip() or None)
+        except Exception as _gt_err:  # noqa: BLE001
+            _mlog.info("measure: garment-type read skipped (%s)", type(_gt_err).__name__)
+
+    _mlog.info("measure: COMPLETE — method=%s confidence=%.3f measurements=%s garment_type=%s",
+               m["method"], confidence, measurements, garment_type)
+
     return {
         "needs_retake": False,
         "retake": False,
         "provider": "cv",
+        "garment_type": garment_type,
         "chest_cm": m["chest_cm"],
         "length_cm": m["length_cm"],
         "waist_cm": m["waist_cm"],

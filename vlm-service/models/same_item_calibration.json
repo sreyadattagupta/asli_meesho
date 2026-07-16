@@ -1,10 +1,10 @@
 {
   "_comment": "Agent-1 same-item gate calibration. CLIP is the gate; DINOv2 is reported-only evidence (measured to add no discrimination on this task — see live-proof-matcher memory / eval). All values env-overridable via SAME_ITEM_THRESHOLD / SAME_ITEM_GATE_SIGNAL.",
   "gate_signal": "clip/max",
-  "gate_threshold": 0.78,
+  "gate_threshold": 0.75,
   "evidence_signal": "dino/max/cls",
   "operating_point": "fixture-validated (provisional)",
-  "_threshold_rationale": "The deepfashion-inshop eval yields 0.896 for a strict ~5% false-accept on its SEMANTIC negatives, but its positives are front/side/back poses — HARDER than a real Meesho catalog-vs-live pair — so 0.896 over-rejects genuine items (the real same-kurti fixture scores clip/max 0.81 and would fail). We therefore ship a provisional 0.78, which passes the genuine fixture (0.81) and rejects the different-dress fixture (0.71), leaning slightly toward recall since the challenge code + reuse + human review backstop fraud. MUST be re-validated on a real Meesho catalog-vs-live set; set SAME_ITEM_THRESHOLD=0.896 for the strict eval operating point.",
+  "_threshold_rationale": "The deepfashion-inshop eval yields 0.896 for a strict ~5% false-accept on its SEMANTIC negatives, but its positives are front/side/back poses — HARDER than a real Meesho catalog-vs-live pair — so 0.896 over-rejects genuine items (the real same-kurti fixture scores clip/max 0.81 and would fail). We ship a recall-leaning 0.75, which passes the genuine fixture (0.81) and rejects the different-dress fixture (0.71), because the product requirement is 'only fail if it is a DIFFERENT product' and the challenge code (single-use) + reuse/liveness + human review backstop fraud. BELOW this bar an in-band VLM feature-comparison tie-breaker (main.py: SAME_ITEM_VLM_LO/HI; compares pattern/colour/print/logo/style, ignores background/lighting/angle) can still RESCUE a genuine seller — recall-only, it never vetoes a pass. MUST be re-validated on a real Meesho catalog-vs-live set; set SAME_ITEM_THRESHOLD=0.896 for the strict eval operating point.",
   "dataset": "Marqo/deepfashion-inshop",
   "calibration": {
     "n_instances": 201,

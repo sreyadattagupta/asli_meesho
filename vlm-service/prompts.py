@@ -8,7 +8,13 @@ Both jobs force STRICT JSON only — no prose, no markdown.
 import json
 from pathlib import Path
 
-_PROMPTS_PATH = Path(__file__).resolve().parent.parent / "prompts" / "vlm-prompts.json"
+# Canonical single source is the repo-root prompts/ file (local dev + the TS Gemini provider read it).
+# For a container built from vlm-service/ alone (Cloud Run / Spaces), that path is above the build
+# context, so we fall back to a bundled sibling copy synced at deploy time (see scripts/bundle for
+# deploy) — same "committed-cache" pattern as models/grading.json. Root stays authoritative.
+_ROOT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "vlm-prompts.json"
+_BUNDLED_PATH = Path(__file__).resolve().parent / "vlm-prompts.json"
+_PROMPTS_PATH = _ROOT_PATH if _ROOT_PATH.exists() else _BUNDLED_PATH
 with _PROMPTS_PATH.open(encoding="utf-8") as _f:
     _PROMPTS = json.load(_f)
 
@@ -29,6 +35,13 @@ def describe_live_prompt() -> str:
     The code is typed and text-verified upstream, so the live photo is product-only (no slip).
     """
     return _PROMPTS["describe_live_prompt"]
+
+
+def same_item_compare_prompt() -> str:
+    """Agent 1 (Live Proof) — feature-based same-product comparison (pattern/colour/print/logo/
+    style), explicitly ignoring background/lighting/angle/hands. Used as the VLM tie-breaker in the
+    ambiguous CLIP band so genuine sellers are not blocked by capture conditions."""
+    return _PROMPTS["same_item_compare_prompt"]
 
 
 def measure_prompt(reference_object: str) -> str:
