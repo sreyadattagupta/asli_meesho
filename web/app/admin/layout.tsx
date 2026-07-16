@@ -1,21 +1,26 @@
-"use client";
-
 // Trust & Safety console shell — dark Asli skin (inherited), tabbed nav.
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { LayoutDashboard, ListChecks, Users, ShieldCheck } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
-import { cn } from "@/lib/cn";
+//
+// This layout is the ROLE GUARD for every /admin/* page. It used to be a client component, which
+// cannot read the session, and none of the admin pages checked the role either: middleware only
+// proves you are signed in ("this gate only keeps signed-out users out of the shell"), so any
+// authenticated buyer or seller could open the admin console and see the reviewer UI. The APIs
+// 403'd so no data loaded — but the shell rendering at all is what CLAUDE.md §11's "middleware gate
+// + per-route role re-check" exists to prevent.
+//
+// A server layout guards every nested route from one place; the tabs move to a client child.
+import { redirect } from "next/navigation";
+import { ShieldCheck } from "lucide-react";
 import type { ReactNode } from "react";
+import { getSessionUser } from "@/lib/auth";
+import { AdminNav } from "@/features/admin/AdminNav";
 
-const TABS: { href: string; label: string; icon: LucideIcon }[] = [
-  { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/admin/queue", label: "Review queue", icon: ListChecks },
-  { href: "/admin/users", label: "Roles", icon: Users },
-];
+const ROLE_HOME = { seller: "/seller", buyer: "/shop", admin: "/admin" } as const;
 
-export default function AdminLayout({ children }: { children: ReactNode }) {
-  const pathname = usePathname();
+export default async function AdminLayout({ children }: { children: ReactNode }) {
+  const user = await getSessionUser();
+  if (!user) redirect("/login?returnTo=/admin");
+  // Signed in but not an admin: send them to their own home rather than a dead end.
+  if (user.role !== "admin") redirect(ROLE_HOME[user.role] ?? "/shop");
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-6">
@@ -25,28 +30,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         <span className="pill bg-white/5 text-white/40">admin console</span>
       </div>
 
-      <nav className="mb-6 flex flex-wrap gap-1.5" aria-label="Admin sections">
-        {TABS.map((tab) => {
-          const active = tab.href === "/admin" ? pathname === "/admin" : pathname.startsWith(tab.href);
-          return (
-            <Link
-              key={tab.href}
-              href={tab.href}
-              aria-current={active ? "page" : undefined}
-              className={cn(
-                "inline-flex min-h-[44px] items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-asli-violet",
-                active
-                  ? "bg-asli-violet/15 text-asli-violet ring-1 ring-asli-violet/30"
-                  : "text-white/60 hover:bg-white/5",
-              )}
-            >
-              <tab.icon className="h-4 w-4" aria-hidden />
-              {tab.label}
-            </Link>
-          );
-        })}
-      </nav>
-
+      <AdminNav />
       {children}
     </main>
   );
