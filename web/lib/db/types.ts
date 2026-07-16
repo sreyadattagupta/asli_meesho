@@ -1,6 +1,6 @@
 // Domain types — every entity from CLAUDE.md §7. Locked contract for all phases.
 export type Role = "seller" | "buyer" | "admin";
-export type ListingStatus = "draft" | "pending" | "live" | "blocked" | "escalated" | "rejected";
+export type ListingStatus = "draft" | "pending" | "live" | "blocked" | "escalated" | "rejected" | "archived";
 export type KycStatus = "pending" | "submitted" | "verified";
 export type OrderStatus = "placed" | "shipped" | "delivered";
 export type ImageKind = "catalog" | "live" | "flatlay" | "delivery" | "kyc";
@@ -8,7 +8,10 @@ export type PaymentMethod = "cod" | "upi_mock";
 export type TrustBand = "high" | "medium" | "low";
 
 export interface User { id: string; auth0Sub: string; email: string; name: string; role: Role; sellerId?: string; createdAt: string; }
-export interface Seller { id: string; userId?: string; name: string; shopName: string; trustScore: number; trustBand: TrustBand; kycStatus: KycStatus; kycDocUrl?: string; isNew: boolean; passes: number; fails: number; createdAt: string; }
+// Business fields are optional: they arrive when the seller completes their profile, and every
+// existing row predates them. `bankLast4` is deliberately the ONLY bank data we keep — a demo has no
+// business holding a full account number, and not storing it is cheaper than protecting it.
+export interface Seller { id: string; userId?: string; name: string; shopName: string; trustScore: number; trustBand: TrustBand; kycStatus: KycStatus; kycDocUrl?: string; isNew: boolean; passes: number; fails: number; createdAt: string; businessName?: string; gst?: string; pan?: string; address?: string; mobile?: string; bankLast4?: string; }
 export interface Listing { id: string; sellerId: string; title: string; description: string; price: number; category: string; status: ListingStatus; flowStep: string; verified: boolean; sizeChart?: Record<string, number>; rankBoost: number; createdAt: string; }
 export interface ProductImage { id: string; listingId: string; url: string; imageHash: string; embeddingId?: string; kind: ImageKind; }
 /** ProductImage without the `url` blob — what list views are allowed to load. See Repo.listImageMeta. */

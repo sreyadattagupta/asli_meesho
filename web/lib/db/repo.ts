@@ -47,6 +47,8 @@ export interface Repo {
   createOrder(o: Omit<Order, "id" | "placedAt">): Promise<Order>;
   getOrder(id: string): Promise<Order | null>;
   listOrdersByBuyer(buyerUserId: string): Promise<Order[]>;
+  /** Orders against one listing — the seller portal's revenue/order counts. */
+  listOrdersByListing(listingId: string): Promise<Order[]>;
   advanceOrder(id: string): Promise<Order>; // placed→shipped→delivered (idempotent at delivered)
   upsertPromise(p: Omit<PromiseRecord, "id">): Promise<PromiseRecord>;
   getPromiseByListing(listingId: string): Promise<PromiseRecord | null>;

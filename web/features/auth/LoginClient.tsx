@@ -25,7 +25,7 @@ const PORTALS = [
 // Public create-account may only pick non-privileged roles (admin is provisioned admin-side / dev-only).
 const REGISTER_ROLES: readonly Role[] = ["seller", "buyer"];
 
-const ROLE_HOME: Record<Role, string> = { seller: "/sell", buyer: "/shop", admin: "/admin" };
+const ROLE_HOME: Record<Role, string> = { seller: "/seller", buyer: "/shop", admin: "/admin" };
 const ROLE_LABEL: Record<Role, string> = { seller: "seller portal", buyer: "marketplace", admin: "admin console" };
 
 const inputCls =

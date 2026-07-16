@@ -4,7 +4,9 @@ import { NextRequest, NextResponse } from "next/server";
 // break the edge middleware bundle). Kept in sync with lib/session.ts SESSION_COOKIE.
 const SESSION_COOKIE = "asli_session";
 
-const AUTHED = [/^\/sell/, /^\/admin/, /^\/checkout/, /^\/orders/, /^\/onboarding/];
+// /seller is listed separately even though /^\/sell/ already matches it by prefix — that overlap is
+// an accident, and renaming /sell would silently unprotect the whole seller portal.
+const AUTHED = [/^\/sell/, /^\/seller/, /^\/admin/, /^\/checkout/, /^\/orders/, /^\/onboarding/];
 
 // Strictly-gated E2E/demo bypass — never active in production; requires the flag AND an explicit
 // x-test-role (header for Playwright, cookie for manual use). Mirrors lib/auth.ts getSessionUser.

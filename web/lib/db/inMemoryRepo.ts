@@ -161,6 +161,11 @@ export class InMemoryRepo implements Repo {
       .filter(o => o.buyerUserId === buyerUserId)
       .sort((a, b) => b.placedAt.localeCompare(a.placedAt));
   }
+  async listOrdersByListing(listingId: string): Promise<Order[]> {
+    return [...this.orders.values()]
+      .filter(o => o.listingId === listingId)
+      .sort((a, b) => b.placedAt.localeCompare(a.placedAt));
+  }
   async advanceOrder(id: string): Promise<Order> {
     const o = this.orders.get(id);
     if (!o) throw new Error("order not found");

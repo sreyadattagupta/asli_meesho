@@ -30,6 +30,12 @@ const sellerFromDb = (r: Row): Seller => ({
   kycDocUrl: (r.kyc_doc_url as string | null) ?? undefined,
   isNew: Boolean(r.is_new), passes: Number(r.passes), fails: Number(r.fails),
   createdAt: r.created_at as string,
+  businessName: (r.business_name as string | null) ?? undefined,
+  gst: (r.gst as string | null) ?? undefined,
+  pan: (r.pan as string | null) ?? undefined,
+  address: (r.address as string | null) ?? undefined,
+  mobile: (r.mobile as string | null) ?? undefined,
+  bankLast4: (r.bank_last4 as string | null) ?? undefined,
 });
 
 const sellerToDb = (s: Partial<Seller>): Row => {
@@ -44,6 +50,12 @@ const sellerToDb = (s: Partial<Seller>): Row => {
   if (s.isNew !== undefined) r.is_new = s.isNew;
   if (s.passes !== undefined) r.passes = s.passes;
   if (s.fails !== undefined) r.fails = s.fails;
+  if (s.businessName !== undefined) r.business_name = s.businessName;
+  if (s.gst !== undefined) r.gst = s.gst;
+  if (s.pan !== undefined) r.pan = s.pan;
+  if (s.address !== undefined) r.address = s.address;
+  if (s.mobile !== undefined) r.mobile = s.mobile;
+  if (s.bankLast4 !== undefined) r.bank_last4 = s.bankLast4;
   return r;
 };
 
@@ -338,6 +350,12 @@ export class SupabaseRepo implements Repo {
   }
   getOrder(id: string) {
     return this.maybe(this.sb.from("orders").select().eq("id", id).maybeSingle(), orderFromDb);
+  }
+  listOrdersByListing(listingId: string) {
+    return this.many(
+      this.sb.from("orders").select().eq("listing_id", listingId)
+        .order("placed_at", { ascending: false }),
+      orderFromDb);
   }
   listOrdersByBuyer(buyerUserId: string) {
     return this.many(

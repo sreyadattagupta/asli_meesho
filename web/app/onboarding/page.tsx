@@ -15,7 +15,7 @@ import type { Role } from "@/lib/db/types";
 import type { LucideIcon } from "lucide-react";
 import type { I18nKey } from "@/lib/i18n/en";
 
-const roleHome: Record<Role, string> = { seller: "/sell", buyer: "/shop", admin: "/admin" };
+const roleHome: Record<Role, string> = { seller: "/seller", buyer: "/shop", admin: "/admin" };
 
 const cards: { role: Role; icon: LucideIcon; titleKey: I18nKey; hintKey: I18nKey }[] = [
   { role: "seller", icon: Store, titleKey: "onboarding.seller", hintKey: "onboarding.seller.hint" },
@@ -63,7 +63,7 @@ export default function OnboardingPage() {
           <h1 className="text-2xl font-black tracking-tight">One more step</h1>
           <p className="mt-1 text-sm text-white/60">Verify your shop to unlock listing.</p>
         </div>
-        <KycOnboarding onDone={() => router.push("/sell")} />
+        <KycOnboarding onDone={() => router.push("/seller")} />
       </main>
     );
   }
