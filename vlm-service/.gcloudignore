@@ -12,6 +12,11 @@ __pycache__/
 # transient eval/build artifacts (the committed model.onnx + *_calibration.json ARE needed)
 models/eval_cache_*.pkl
 models/*.log
+# Big ONNX backbones (~420MB) are hosted on the HF Hub (dsreya/asli-onnx-backbones) and downloaded in
+# the Dockerfile at build — keeping them OUT of the Cloud Build source upload (which otherwise times
+# out at ~450MB / 300s on a home uplink). Small JSON calibrations stay in the upload.
+models/clip-vit-b32/
+models/dinov2-small/
 # tests + one-off dev tooling — not needed in the serving image
 test_*.py
 gen_test_data.py
