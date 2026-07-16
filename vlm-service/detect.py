@@ -34,8 +34,28 @@ from PIL import Image, ImageOps
 # ---- tunables (documented, not magic) ------------------------------------
 _MAX_SIDE = 1024          # working resolution; corners are scaled back to the original frame
 _MIN_QUAD_AREA_FRAC = 0.01  # a reference smaller than 1% of the frame is too small to trust as scale
-_ASPECT_TOL = 0.30        # |detected aspect / true aspect − 1| must be within this to accept a quad
+# |detected aspect / true aspect − 1| must be within this to accept a quad. Kept BELOW 0.293 on
+# purpose: that is exactly where a SQUARE sits relative to A4 (1.0 vs 1.414), so the previous 0.30
+# accepted a square notepad as an A4 and silently scaled every measurement by ~41%. A wrong scale is
+# worse than no scale — it produces a confident, wrong size chart instead of an honest RETAKE.
+# Real A4s measured on genuine flat-lays land at err 0.004–0.086, so 0.20 keeps >2x headroom for
+# perspective while ruling out non-A4 rectangles.
+_ASPECT_TOL = 0.20
 _PAPER_MIN_BRIGHT = 110   # mean interior intensity (0–255) for a quad to read as a bright sheet
+# approxPolyDP tolerances (fraction of contour perimeter) tried in order until a contour reduces to a
+# convex quad. A single tight epsilon only fits paper that is perfectly flat and cleanly cut: a real
+# seller's sheet curls at the corners, creases where it lies over a seam, and is often torn from a
+# notebook (a perforated edge alone adds vertices). Measured on a real flat-lay, the A4 simplified to
+# 7 vertices at 0.02 and to a clean quad at 0.05 — every other gate (paper-bright interior, A4
+# aspect, min area) passed, so the sheet was rejected purely by simplification tolerance and the
+# seller was told "No A4 sheet detected" with the sheet plainly in frame. Widening the LADDER (not
+# the discriminating gates) keeps detection deterministic while tolerating real-world paper.
+_QUAD_EPS_LADDER = (0.02, 0.03, 0.04, 0.05, 0.06, 0.08)
+# Max background-edge density for a frame to read as a flat-lay (see scene_check for the calibration).
+_MAX_SCENE_CLUTTER = 0.12
+# Fixed seed for GrabCut's internal k-means → the same photo always yields the same silhouette, so a
+# seller's size chart is reproducible rather than drifting between identical runs.
+_GRABCUT_SEED = 20260716
 
 # Reference true aspect ratio (long / short side).
 _REF_ASPECT: dict[str, float] = {
@@ -56,6 +76,22 @@ def _open_gray_and_bgr(data: bytes) -> tuple[np.ndarray, np.ndarray, float]:
     rgb = np.asarray(work)
     gray = np.asarray(work.convert("L"))
     return gray, rgb, scale
+
+
+def _approx_quad(contour, peri: float):
+    """Reduce a contour to a convex 4-point polygon, loosening the tolerance until it fits.
+
+    Returns the 4x2 approx (as approxPolyDP does) or None if no tolerance in the ladder yields a
+    convex quad. The caller still gates on aspect + brightness + area, so a looser fit here cannot
+    admit a non-reference: it only lets an imperfect *rectangle* be recognised as one.
+    """
+    import cv2
+
+    for eps in _QUAD_EPS_LADDER:
+        approx = cv2.approxPolyDP(contour, eps * peri, True)
+        if len(approx) == 4 and cv2.isContourConvex(approx):
+            return approx
+    return None
 
 
 def _order_corners(pts: np.ndarray) -> np.ndarray:
@@ -97,8 +133,8 @@ def detect_reference_quad(data: bytes, kind: str = "a4") -> dict | None:
         if area < _MIN_QUAD_AREA_FRAC * frame_area:
             continue
         peri = cv2.arcLength(c, True)
-        approx = cv2.approxPolyDP(c, 0.02 * peri, True)
-        if len(approx) != 4 or not cv2.isContourConvex(approx):
+        approx = _approx_quad(c, peri)
+        if approx is None:
             continue
         quad = approx.reshape(4, 2).astype(np.float64)
         (cw, ch) = cv2.minAreaRect(approx)[1]
@@ -157,11 +193,19 @@ def scene_check(ref: dict, landmarks: dict, img_wh: tuple[int, int]) -> dict:
     garment_h_frac = (g[3] - g[1]) / h if h else 0.0
     # Primary signal: background clutter outside the garment + A4. A flat-lay on a plain surface has
     # near-zero background edges; an on-body / real-world 3D scene (where the A4 floats at a different
-    # depth than the subject, breaking the coplanarity homography assumes) is busy. Threshold from the
-    # fixtures: plain flat-lay ≈ 0.00, on-body outdoor ≈ 0.17.
+    # depth than the subject, breaking the coplanarity homography assumes) is busy.
+    #
+    # Calibration (measured, not guessed): repo fixtures span 0.0000–0.0486, but those are all shot on
+    # clean surfaces. A real seller flat-lay on a PATTERNED BEDSHEET — the normal surface in a Bharat
+    # home, and a perfectly valid flat-lay — measures 0.0733, so the previous 0.06 limit rejected it
+    # with "Busy background" and no retake could ever fix it (the seller owns that bedsheet). The
+    # limit now sits between that and the on-body case (≈0.17 per the original calibration), keeping
+    # margin on both sides. NOTE: this is a proxy for the real question ("is the A4 coplanar with the
+    # garment?"); the direct test is A4/garment overlap. Revisit with an on-body fixture — the repo
+    # has none, so the 0.17 figure is inherited, not re-verified here.
     clutter = float(landmarks.get("bg_edge_density", 0.0))
 
-    coplanar_ok = clutter <= 0.06
+    coplanar_ok = clutter <= _MAX_SCENE_CLUTTER
     reason = "" if coplanar_ok else (
         "Busy background detected — this looks like an on-body or in-scene photo, not a flat-lay. "
         "Lay the garment FLAT on a plain surface with an A4 sheet beside it and shoot straight down.")
@@ -193,6 +237,12 @@ def detect_garment_landmarks(data: bytes, reference_bbox: list | None = None) ->
     mask = np.zeros((h, w), np.uint8)
     rect = (int(w * 0.05), int(h * 0.05), int(w * 0.90), int(h * 0.90))
     try:
+        # GrabCut seeds its internal k-means from OpenCV's global RNG, so the same photo segments
+        # slightly differently on every call and the measured cm move with it. Pinning the seed makes
+        # the whole pipeline reproducible: one photo → one size chart, every time. Without this the
+        # waist drifted 2.0 cm (≈0.8 of a size step) across identical runs — the product promises
+        # "measured, not guessed", and a number that changes when nothing changed is neither.
+        cv2.setRNGSeed(_GRABCUT_SEED)
         cv2.grabCut(rgb, mask, rect, np.zeros((1, 65), np.float64), np.zeros((1, 65), np.float64),
                     5, cv2.GC_INIT_WITH_RECT)
     except Exception:  # noqa: BLE001
@@ -222,6 +272,35 @@ def detect_garment_landmarks(data: bytes, reference_bbox: list | None = None) ->
 
     prof = _width_profile(fg)
 
+    # Landmarks are extrema of the width profile, and GrabCut's mask is not bit-identical run to run
+    # (its internal k-means seeds randomly). A raw argmin/argmax therefore latches onto whichever
+    # single row the noise happened to nick: measured on one real flat-lay, waist_cm swung 55.7–57.7
+    # across 5 runs of the SAME image (2.0 cm ≈ 0.8 of a size step) while chest/length/shoulder — read
+    # off a broad plateau rather than a shallow valley — were rock stable at 0.0 spread. A chart that
+    # says "measured, not guessed" cannot move a size between identical runs, so both the profile and
+    # the chosen row's extent are smoothed over a neighbourhood instead of trusting one pixel row.
+    _smooth_win = max(3, int(0.05 * gh) | 1)  # odd window ≈5% of garment height
+
+    def _smoothed(band: np.ndarray) -> np.ndarray:
+        if band.size < _smooth_win:
+            return band.astype(np.float64)
+        kern = np.ones(_smooth_win) / _smooth_win
+        return np.convolve(band.astype(np.float64), kern, mode="same")
+
+    def _extent_near(yy: int) -> tuple[int, int]:
+        """Median left/right edge over rows around `yy` — one row's edges are noise, the local
+        consensus is the landmark."""
+        half = _smooth_win // 2
+        lefts, rights = [], []
+        for r in range(max(0, yy - half), min(fg.shape[0], yy + half + 1)):
+            row = np.where(fg[r] > 0)[0]
+            if row.size:
+                lefts.append(int(row.min()))
+                rights.append(int(row.max()))
+        if not lefts:
+            return x0, x1
+        return int(np.median(lefts)), int(np.median(rights))
+
     def widest_in(a: float, b: float) -> tuple[int, int, int]:
         """Row of maximum width within the band [a,b] of the garment height; return (y, xl, xr)."""
         lo, hi = y0 + int(a * gh), y0 + int(b * gh)
@@ -229,9 +308,9 @@ def detect_garment_landmarks(data: bytes, reference_bbox: list | None = None) ->
         if band.size == 0 or band.max() == 0:
             yy = (lo + hi) // 2
             return yy, x0, x1
-        yy = lo + int(np.argmax(band))
-        row = np.where(fg[yy] > 0)[0]
-        return yy, int(row.min()), int(row.max())
+        yy = lo + int(np.argmax(_smoothed(band)))
+        xl, xr = _extent_near(yy)
+        return yy, xl, xr
 
     def narrowest_in(a: float, b: float) -> tuple[int, int, int]:
         """Row of minimum non-zero width within a band — the waist pinch below the chest."""
@@ -241,17 +320,22 @@ def detect_garment_landmarks(data: bytes, reference_bbox: list | None = None) ->
             yy = (lo + hi) // 2
             return yy, x0, x1
         band[band == 0] = band.max() + 1  # ignore empty rows when seeking the minimum
-        yy = lo + int(np.argmin(band))
-        row = np.where(fg[yy] > 0)[0]
-        return yy, int(row.min()), int(row.max())
+        yy = lo + int(np.argmin(_smoothed(band)))
+        xl, xr = _extent_near(yy)
+        return yy, xl, xr
 
     # Shoulder = widest run in the top band; chest = widest in the upper torso; waist = narrowest below.
     sy, sxl, sxr = widest_in(0.0, 0.18)
     cy, cxl, cxr = widest_in(0.12, 0.45)
     wy, wxl, wxr = narrowest_in(0.45, 0.72)
-    # Hip = widest run in the lower body (dresses / bottoms); neck = narrowest run in the collar band.
-    hy, hxl, hxr = widest_in(0.55, 0.95)
-    ny, nxl, nxr = narrowest_in(0.0, 0.12)
+    # Hip = widest run BELOW the waist. The band must start under the measured waist row, not at a
+    # fixed 0.55: the waist and hip search bands used to overlap (0.45–0.72 vs 0.55–0.95), so on a
+    # real flat-lay the "hip" was found at 57% of the garment while the "waist" sat at 72% — a hip
+    # measured above the waist, which is not a hip. Anatomical order is a property of the garment, so
+    # it is enforced by construction rather than hoped for.
+    waist_frac = (wy - y0) / gh
+    hip_lo = min(waist_frac + 0.02, 0.93)
+    hy, hxl, hxr = widest_in(hip_lo, 0.95)
 
     # Background edge density: exclude the garment box too, then measure edges in what remains.
     bg_mask[y0:y1, x0:x1] = 0
@@ -265,7 +349,12 @@ def detect_garment_landmarks(data: bytes, reference_bbox: list | None = None) ->
         "chest": [cxl * s, cy * s, cxr * s, cy * s],
         "waist": [wxl * s, wy * s, wxr * s, wy * s],
         "hip": [hxl * s, hy * s, hxr * s, hy * s],
-        "neck": [nxl * s, ny * s, nxr * s, ny * s],
+        # NOTE: no "neck". A neckline is an INTERIOR hole; this module reads the OUTER silhouette's
+        # width profile, which cannot see it. The previous `narrowest_in(0.0, 0.12)` could only ever
+        # return the topmost sliver where the garment starts — measured 32.9 cm on a real kurti (an
+        # impossible neckline) and 17.5 cm on another, i.e. an artifact of where the mask began, not
+        # a measurement. Same call as sleeve (below): omit rather than invent. Measuring a real
+        # neckline needs the hole in the mask (or a parts segmenter), not the silhouette.
         "fg_frac": round(frac, 3),
         "bg_edge_density": round(bg_edge_density, 4),
         "landmark_ok": bool(0.08 <= frac <= 0.95),

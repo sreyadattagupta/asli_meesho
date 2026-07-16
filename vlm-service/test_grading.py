@@ -1,13 +1,15 @@
-import csv, pathlib
-from training.fit_grading import fit_grades, evaluate   # pure fns; no Hub/network in tests
+from training.fit_grading import fit_grades, evaluate, load_rows   # pure fns; no Hub/network in tests
 
 
 def _rows():
-    p = pathlib.Path(__file__).parent / "data" / "grading_specs.csv"
-    with p.open() as f:
-        return [ {**r, **{k: float(r[k]) for k in
-                 ("size_ord","chest_cm","waist_cm","length_cm","shoulder_cm","sleeve_cm")}}
-                 for r in csv.DictReader(f) ]
+    """Load via the PRODUCTION loader (offline CSV source), not a hand-copied cast list.
+
+    The old helper duplicated the float-cast column list, so when hip_cm/neck_cm were added to DIMS
+    and the CSV the helper kept them as strings and every fit blew up in `np.allclose(y, 0.0)` on a
+    '<U4' array. Casting is the loader's job — calling it here keeps the test honest about what
+    production actually does and cannot drift out of sync with DIMS again.
+    """
+    return load_rows(source="csv")
 
 
 def test_fit_recovers_linear_slope_for_top_chest():
