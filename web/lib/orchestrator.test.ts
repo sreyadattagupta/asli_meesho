@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   decide, requiredConfidence, stepForAction, MAX_ATTEMPTS, MATCH_THRESHOLD,
+  MATCH_THRESHOLD_DEFAULT, MAX_REQUIRED_CONFIDENCE, parseMatchThreshold,
   MSG_LIVE_PROOF_MISMATCH, MSG_LIVE_PROOF_ESCALATED,
 } from "./orchestrator";
 
@@ -9,19 +10,58 @@ const base = {
   matchConfidence: 0.95, sellerIsNew: false, attempt: 0,
 };
 
+// The genuine band the vlm-service actually emits (see orchestrator.ts). Asserted as literals, not
+// relative to MATCH_THRESHOLD: the assertions below must FAIL if the configured floor ever drifts
+// into this band. A misconfigured NEXT_PUBLIC_MATCH_THRESHOLD=0.90 once shipped exactly that — every
+// honest seller was told "Product mismatch" on every retry — while the relative tests stayed green.
+const GENUINE_WORST_CASE = 0.83;
+const MISMATCH_TYPICAL = 0.45;
+
 describe("requiredConfidence", () => {
-  it("floored at the strict ≥90% threshold", () =>
+  it("floored at the configured threshold", () =>
     expect(requiredConfidence(base)).toBeCloseTo(MATCH_THRESHOLD));
   it("cold-start nudges above the floor", () =>
     expect(requiredConfidence({ ...base, sellerIsNew: true })).toBeGreaterThan(MATCH_THRESHOLD));
   it("reverse-image reuse does NOT raise the bar (invariant #1 — trigger, not a penalty)", () =>
     expect(requiredConfidence({ ...base, reverseImageMatches: 50 })).toBeCloseTo(MATCH_THRESHOLD));
-  it("caps at 0.90", () => expect(requiredConfidence({ ...base, sellerIsNew: true,
-    reverseImageMatches: 50, attempt: 9 })).toBeLessThanOrEqual(0.9));
+
+  it("NEVER reaches the genuine band, even at maximum risk", () =>
+    expect(requiredConfidence({ ...base, sellerIsNew: true, reverseImageMatches: 50, attempt: 9 }))
+      .toBeLessThan(GENUINE_WORST_CASE));
+  it("always stays above the mismatch band", () =>
+    expect(requiredConfidence(base)).toBeGreaterThan(MISMATCH_TYPICAL));
+});
+
+describe("parseMatchThreshold — config can't silently redefine the gate", () => {
+  it("unset falls back to the calibrated default", () =>
+    expect(parseMatchThreshold(undefined)).toBe(MATCH_THRESHOLD_DEFAULT));
+  it("present-but-blank does NOT become 0 (Number('') === 0 would disable the gate)", () =>
+    expect(parseMatchThreshold("")).toBe(MATCH_THRESHOLD_DEFAULT));
+  it("non-numeric falls back", () => expect(parseMatchThreshold("high")).toBe(MATCH_THRESHOLD_DEFAULT));
+  it("rejects a value inside the genuine band (the 0.90 misconfiguration)", () =>
+    expect(parseMatchThreshold("0.90")).toBe(MATCH_THRESHOLD_DEFAULT));
+  it("rejects a value down in the mismatch band", () =>
+    expect(parseMatchThreshold("0.4")).toBe(MATCH_THRESHOLD_DEFAULT));
+  it("accepts an in-band override", () => expect(parseMatchThreshold("0.8")).toBe(0.8));
+});
+
+describe("decide — a genuine capture always clears the bar", () => {
+  // The regression: worst-case genuine confidence, cold-start seller, deep into the retry budget.
+  it.each([0, 1, 5, 9])("AUTO_APPROVEs a worst-case genuine capture at attempt %i", (attempt) =>
+    expect(decide({ ...base, matchConfidence: GENUINE_WORST_CASE, sellerIsNew: true, attempt }).action)
+      .toBe("AUTO_APPROVE"));
+
+  it("still rejects a mismatch at the same risk level", () =>
+    expect(decide({ ...base, matchConfidence: MISMATCH_TYPICAL, sellerIsNew: true, attempt: 0 }).action)
+      .toBe("RE_CHALLENGE"));
+
+  it("the composed bar never exceeds the documented ceiling", () =>
+    expect(requiredConfidence({ ...base, sellerIsNew: true, attempt: 99 }))
+      .toBeLessThanOrEqual(MAX_REQUIRED_CONFIDENCE));
 });
 
 describe("decide — strict Agent-1 gate", () => {
-  it("AUTO_APPROVE when same product + code + confidence ≥ 90%", () =>
+  it("AUTO_APPROVE when same product + code + confidence above the bar", () =>
     expect(decide(base).action).toBe("AUTO_APPROVE"));
 
   it("close miss (right item, code ok, under the bar) retries on the first attempt", () =>

@@ -80,7 +80,32 @@ export const MAX_ATTEMPTS = 10;
 // bar sits between those bands so a genuine seller clears it while a mismatch never does. The service
 // already hard-gates same_item (crop cosine + colour + code); this is the composed second gate.
 // Adaptive (invariant #7) but never a constant. Configurable without touching logic.
-export const MATCH_THRESHOLD = Number(process.env.NEXT_PUBLIC_MATCH_THRESHOLD ?? 0.78);
+//
+// The bands above are the whole contract, so both edges are enforced here rather than trusted to
+// config. A bar at/above GENUINE_FLOOR rejects honest sellers on every retry (a genuine capture
+// cannot score its way out); a bar near the mismatch band waves thieves through.
+const GENUINE_FLOOR = 0.83; // lowest confidence a genuine re-capture is expected to reach
+const MISMATCH_CEILING = 0.45; // highest confidence a rejected/different item is expected to reach
+export const MATCH_THRESHOLD_DEFAULT = 0.78;
+/** Hard ceiling for the composed bar — must stay strictly under the genuine band. */
+export const MAX_REQUIRED_CONFIDENCE = 0.82;
+
+/**
+ * Parse the configured floor defensively. `Number(process.env.X ?? d)` does NOT survive contact with
+ * real config: `??` only catches null/undefined, so a var present-but-blank yields `Number("") === 0`
+ * and silently disables the gate. An out-of-band value is equally unsafe in the other direction —
+ * `MATCH_THRESHOLD=0.90` (the *vlm-service* python knob, a different scale) was set here once and
+ * pushed the bar to 0.90, inside the genuine band, so every honest seller was told
+ * "Product mismatch" forever. Anything unparseable or out of band falls back to the calibrated default.
+ */
+export function parseMatchThreshold(raw: string | undefined): number {
+  const n = Number(raw);
+  if (!raw?.trim() || !Number.isFinite(n)) return MATCH_THRESHOLD_DEFAULT;
+  if (n <= MISMATCH_CEILING || n > MAX_REQUIRED_CONFIDENCE) return MATCH_THRESHOLD_DEFAULT;
+  return n;
+}
+
+export const MATCH_THRESHOLD = parseMatchThreshold(process.env.NEXT_PUBLIC_MATCH_THRESHOLD);
 
 // Exact user-facing copy required by the Agent-1 spec — surfaced verbatim in the seller UI.
 export const MSG_LIVE_PROOF_MISMATCH =
@@ -120,14 +145,16 @@ export function requiredConfidence(
   if (s.sellerIsNew) bar += 0.03; // cold-start: a touch stricter until a record exists
   bar += Math.min(s.attempt, 3) * 0.01; // small nudge for the first few retries, then plateau — with
   // a 10-retry budget we must NOT keep tightening the bar into rejecting a genuine seller.
-  return Math.min(bar, 0.9);
+  // Cap strictly BELOW the genuine band (≈0.83+): past that the risk nudges stop discriminating and
+  // just reject honest sellers, who then retry into the same wall until they land in human review.
+  return Math.min(bar, MAX_REQUIRED_CONFIDENCE);
 }
 
 /**
  * The agentic core: turn raw Agent-1 signals into the next action.
  *
  * Agent 1 (Live Proof) is a STRICT gate: the live photo must be the SAME product as the catalog
- * (same_item) with the code confirmed AND the match confidence at/above the ≥90% bar. Any failure
+ * (same_item) with the code confirmed AND the match confidence at/above the adaptive bar. Any failure
  * — a different item, a swapped product, or similarity under the bar — is a verification failure:
  * the seller retries, and a SECOND failure blocks the listing (MAX_ATTEMPTS). No silent pass, no
  * cached verdict — `s` is computed fresh from the real VLM/embedding pipeline on every attempt.
@@ -145,7 +172,7 @@ export function decide(s: AgentSignals, opts?: { fastLane?: boolean }): Orchestr
     };
   }
 
-  // PASS — same product, code confirmed, similarity at/above the strict ≥90% bar.
+  // PASS — same product, code confirmed, similarity at/above the adaptive bar.
   const passed = s.sameItem && s.codeVisible && s.matchConfidence >= bar;
   if (passed) {
     return {
