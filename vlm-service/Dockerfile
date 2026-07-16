@@ -40,9 +40,15 @@ RUN python -c "from huggingface_hub import snapshot_download; snapshot_download(
 # cache — fast, deterministic, no network dependency to serve. HF_HOME pins the cache so the build
 # download and the runtime load use the SAME path. Keep the repo list synced with the env defaults
 # SIGLIP_MODEL / CLOTHES_SEG_MODEL / GARMENT_MODEL.
+#
+# siglip-large-patch16-384 is the SAME_ITEM_THRESHOLD's calibration model (0.82 was fitted on it) and
+# the code default in siglip_embed.py. Running base@224 against that bar rejected genuine sellers:
+# measured on the real fixture pair, base scores a true match at 0.762 — under the bar — while the
+# large-calibrated threshold expects ~0.9. Base stays baked so SIGLIP_MODEL can roll back to it
+# without a rebuild; with HF_HUB_OFFLINE=1 a model that is not in this cache cannot load at all.
 ENV HF_HOME=/app/hf_cache
 RUN python -c "from huggingface_hub import snapshot_download; \
-[snapshot_download(r) for r in ['google/siglip-base-patch16-224', 'mattmdjaga/segformer_b2_clothes', 'dsreya/garment-type-classifier']]"
+[snapshot_download(r) for r in ['google/siglip-large-patch16-384', 'google/siglip-base-patch16-224', 'mattmdjaga/segformer_b2_clothes', 'dsreya/garment-type-classifier']]"
 
 # Generative reads go to Gemini (no GPU); set GEMINI_API_KEY + ALLOWED_ORIGINS as platform secrets.
 # The container listens on $PORT so it works on both HF Spaces (7860) and Cloud Run (injects PORT=8080).

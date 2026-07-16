@@ -21,3 +21,7 @@ models/dinov2-small/
 test_*.py
 gen_test_data.py
 README.md
+
+# Local Qdrant state — a running dev service holds these sqlite files open, which fails the source
+# upload with PermissionError, and runtime state has no place in a serving image anyway.
+qdrant_data/
