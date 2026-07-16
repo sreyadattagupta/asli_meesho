@@ -16,6 +16,12 @@ export function SizeChartTable({
   const waist = measurement?.waistCm ?? listing.sizeChart?.waist_cm;
   if (chest === undefined && length === undefined && waist === undefined) return null;
 
+  // Only a persisted SizeMeasurement comes from Agent 2 actually measuring a flat-lay. Seeded demo
+  // listings carry a frozen `sizeChart` that no camera ever saw — claiming "Measured, not guessed"
+  // over those numbers would be a fabricated trust signal on the buyer's product page (invariant #9:
+  // label simulations honestly).
+  const isMeasured = measurement !== null;
+
   const mapped =
     measurement?.mappedSize ??
     (chest !== undefined
@@ -38,9 +44,15 @@ export function SizeChartTable({
           <Ruler className="h-4 w-4 text-asli-violet" aria-hidden />
           Size chart
         </h2>
-        <span className="rounded-full bg-asli-green/10 px-2.5 py-1 text-[11px] font-semibold text-asli-green">
-          Measured, not guessed
-        </span>
+        {isMeasured ? (
+          <span className="rounded-full bg-asli-green/10 px-2.5 py-1 text-[11px] font-semibold text-asli-green">
+            Measured, not guessed
+          </span>
+        ) : (
+          <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-[11px] font-semibold text-zinc-500">
+            simulated
+          </span>
+        )}
       </div>
       <div className="mt-3 grid grid-cols-3 gap-2">
         {rows.map((r) => (
@@ -52,8 +64,10 @@ export function SizeChartTable({
       </div>
       {mapped && (
         <p className="mt-3 text-xs text-zinc-500">
-          Maps to size <b className="text-zinc-800">{mapped}</b> — measured by AI from the seller&apos;s
-          flat-lay photo with a reference object.
+          Maps to size <b className="text-zinc-800">{mapped}</b>
+          {isMeasured
+            ? " — measured by AI from the seller's flat-lay photo with a reference object."
+            : " — demo listing: sample chart data, not measured from a seller photo."}
         </p>
       )}
     </section>
