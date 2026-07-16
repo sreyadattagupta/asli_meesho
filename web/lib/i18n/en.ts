@@ -33,7 +33,9 @@ export const en = {
   // login
   "login.title": "Sign in to Asli",
   "login.google": "Sign in with Google",
-  "login.privacy": "Only your Google name and email are used; all demo data is fictional.",
+  // Google sign-in was removed — this is email + password, hashed with scrypt. Don't describe an
+  // auth method the app no longer has.
+  "login.privacy": "Your password is stored hashed, never in plain text. All demo data is fictional.",
 
   // shared states
   "state.loading": "Loading…",

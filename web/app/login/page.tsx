@@ -1,6 +1,6 @@
 // Server wrapper — decides whether the dev-only persona bypass is available, then renders the
 // client login UI. The bypass flag is read server-side (never shipped as a public env var).
-import { LoginClient } from "@/components/LoginClient";
+import { LoginClient } from "@/features/auth/LoginClient";
 
 export default function LoginPage() {
   const devLogin =
