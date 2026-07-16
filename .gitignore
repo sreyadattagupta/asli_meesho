@@ -25,3 +25,7 @@ test-results/
 CLAUDE.md
 AGENTS.md
 docs/
+
+# local scratch screenshots dropped in the repo root (kept local, not in repo). Root-only on purpose:
+# a bare *.png would silently swallow real assets added anywhere else.
+/*.png
