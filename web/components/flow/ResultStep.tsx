@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef } from "react";
 import { useReducedMotion } from "framer-motion";
 import { VerifiedBadge } from "@/components/ui/VerifiedBadge";
@@ -90,9 +91,18 @@ export default function ResultStep() {
           </div>
         </div>
 
-        <button className="btn-ghost mt-8" onClick={reset}>
-          {t("flow.result.another")}
-        </button>
+        {/* Where a seller actually wants to go next: their products, with this listing now in it.
+            A link rather than an auto-redirect — this screen is the payoff, and bouncing off it the
+            moment it renders throws that away. reset() clears the finished flow on the way out so
+            /sell starts clean next time. */}
+        <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+          <Link href="/seller/products" className="btn-primary" onClick={reset}>
+            {t("flow.result.products")}
+          </Link>
+          <button className="btn-ghost" onClick={reset}>
+            {t("flow.result.another")}
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -158,6 +158,7 @@ export const en = {
   // result
   "flow.result.title": "Your listing is live",
   "flow.result.subtitle": "Possession proven with today’s live code, size chart measured — not guessed. Buyers see a listing they can trust.",
+  "flow.result.products": "View in my products →",
   "flow.result.another": "List another product",
   "flow.result.voice": "Congratulations! Your listing is live and Asli Verified.",
 } as const;

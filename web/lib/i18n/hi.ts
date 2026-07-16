@@ -134,6 +134,7 @@ export const hi: Partial<Record<keyof typeof en, string>> = {
 
   "flow.result.title": "आपकी लिस्टिंग लाइव है",
   "flow.result.subtitle": "आज के लाइव कोड से पज़ेशन साबित, साइज़ चार्ट मापा गया — अंदाज़ा नहीं। ख़रीदारों को भरोसे वाली लिस्टिंग दिखती है।",
+  "flow.result.products": "मेरे प्रोडक्ट देखें →",
   "flow.result.another": "एक और प्रोडक्ट लिस्ट करें",
   "flow.result.voice": "बधाई हो! आपकी लिस्टिंग लाइव है और असली वेरिफ़ाइड है।",
 };
