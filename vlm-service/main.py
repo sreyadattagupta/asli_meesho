@@ -487,7 +487,7 @@ async def vlm_measure(
         reference_object, ref["bbox"], landmarks["garment"],
         landmarks["chest"], landmarks["waist"], corners,
         shoulder=landmarks.get("shoulder"),
-        hip=landmarks.get("hip"), neck=landmarks.get("neck"),
+        hip=landmarks.get("hip"),  # no neck: unmeasurable from the silhouette (see detect.py)
     )
     confidence = calibration.sizing_confidence(m["ref_aspect_err"], m["residual"], m["box_sanity"])
     if m["method"] == "none" or m["ref_aspect_err"] > 0.25:
@@ -498,10 +498,20 @@ async def vlm_measure(
             f"Measurement confidence too low ({confidence:.0%}). Flatten the garment and A4 sheet "
             "on the same surface, shoot straight-on, and retake.")
 
-    # measurements: real cm only (>0); shoulder added when the homography produced it, sleeve left
-    # unmeasured (never fabricated). This object is what the web fusion layer (lib/sizing.ts) consumes.
-    measurements = {k: m[k] for k in ("chest_cm", "length_cm", "waist_cm", "shoulder_cm", "hip_cm", "neck_cm")
+    # measurements: real cm only (>0); shoulder/hip added when the homography produced them; sleeve and
+    # neck left unmeasured (never fabricated — a flat silhouette cannot separate a sleeve or see the
+    # neckline hole). This object is what the web fusion layer (lib/sizing.ts) consumes.
+    measurements = {k: m[k] for k in ("chest_cm", "length_cm", "waist_cm", "shoulder_cm", "hip_cm")
                     if isinstance(m.get(k), (int, float)) and m[k] > 0}
+
+    # A homography can fit the A4 cleanly (high confidence) while the garment spans collapse to 0 —
+    # e.g. the silhouette hugs the reference, or the landmark rows land outside the mask. Confidence
+    # scores the REFERENCE fit, so it cannot catch that: without this guard the response is
+    # `retake=False, chest_cm=0.0, measurements={}`, and a downstream size lookup turns 0 cm into the
+    # smallest size. Same rule as measure_engine.measure_image — too few real dimensions ⇒ RETAKE.
+    if len(measurements) < 2:
+        return _retake("Couldn't measure the garment outline against the A4 sheet. Lay the garment "
+                       "flat with the whole outline visible, not overlapping the sheet, and retake.")
 
     # Garment-TYPE detection — PRIMARY is the fine-tuned HF classifier (dsreya/garment-type-classifier,
     # trained on Colab GPU). Falls back to the VLM read, then None. Optional metadata: never blocks or
@@ -526,16 +536,19 @@ async def vlm_measure(
         "retake": False,
         "provider": "cv",
         "garment_type": garment_type,
-        "chest_cm": m["chest_cm"],
-        "length_cm": m["length_cm"],
-        "waist_cm": m["waist_cm"],
-        "shoulder_cm": m.get("shoulder_cm"),
+        # Flat fields mirror `measurements`: a dimension the silhouette did not yield is None, not
+        # 0.0 — a zero reads downstream as "measured, and tiny" and grades to the smallest size.
+        "chest_cm": measurements.get("chest_cm"),
+        "length_cm": measurements.get("length_cm"),
+        "waist_cm": measurements.get("waist_cm"),
+        "shoulder_cm": measurements.get("shoulder_cm"),
         "measurements": measurements,
         "reference_used": m["reference_used"],
         "confidence": confidence,
         "reason": (f"Measured from a detected {m['reference_used'].upper()} reference "
-                   f"({m['method']} fit, re-projection residual {m['residual']}); chest "
-                   f"{m['chest_cm']} cm, length {m['length_cm']} cm, waist {m['waist_cm']} cm."),
+                   f"({m['method']} fit, re-projection residual {m['residual']}); "
+                   + ", ".join(f"{k.replace('_cm', '')} {v} cm" for k, v in measurements.items())
+                   + "."),
         "signals": {
             "method": m["method"], "ref_aspect_err": m["ref_aspect_err"],
             "residual": m["residual"], "box_sanity": m["box_sanity"],

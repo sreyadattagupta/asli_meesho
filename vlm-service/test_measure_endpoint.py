@@ -47,6 +47,32 @@ def test_measure_endpoint_returns_augmented_shape(monkeypatch):
     assert {"seg_quality", "landmark_conf", "ref_aspect_err", "residual"} <= set(body["signals"])
 
 
+def test_measure_endpoint_retakes_when_dims_collapse_to_zero(monkeypatch):
+    """A clean A4 fit with a collapsed garment silhouette must RETAKE, not report 0 cm.
+
+    Confidence scores the REFERENCE fit, so a perfect A4 with zero-width garment spans used to pass
+    the floor and return retake=False with chest_cm=0.0 — which a downstream size lookup turned into
+    the smallest size for a garment that was never measured.
+    """
+    monkeypatch.setattr(cv, "quality", lambda *a, **k: {"ok": True, "reason": "", "blur_var": 200.0})
+    ref = {"corners": np.array([[10, 10], [210, 12], [208, 300], [8, 298]], float),
+           "bbox": [8.0, 10.0, 210.0, 300.0], "aspect_err": 0.02}
+    # Degenerate silhouette: every landmark span has zero width/height ⇒ no real dimension.
+    lm = {"garment": [50, 20, 50, 20], "shoulder": [50, 30, 50, 30],
+          "chest": [55, 80, 55, 80], "waist": [60, 180, 60, 180],
+          "fg_frac": 0.42, "landmark_ok": True}
+    monkeypatch.setattr(detect, "detect_reference_quad", lambda *a, **k: ref)
+    monkeypatch.setattr(detect, "detect_garment_landmarks", lambda *a, **k: lm)
+    monkeypatch.setattr(detect, "scene_check",
+                        lambda *a, **k: {"coplanar_ok": True, "reason": "", "clutter": 0.0,
+                                         "garment_height_frac": 0.5})
+
+    body = _post(TestClient(main.app)).json()
+    assert body["retake"] is True
+    assert body["measurements"] == {}
+    assert body["chest_cm"] is None  # never 0.0 — a zero reads downstream as "measured, and tiny"
+
+
 def test_measure_endpoint_retake_on_no_reference(monkeypatch):
     monkeypatch.setattr(cv, "quality", lambda *a, **k: {"ok": True, "reason": "", "blur_var": 200.0})
     monkeypatch.setattr(detect, "detect_reference_quad", lambda *a, **k: None)

@@ -42,7 +42,12 @@ export async function POST(req: Request) {
     const measured = await Promise.all(
       flatlays.map(async (blob) => ({ blob, result: await vlmMeasure(blob, referenceObject) })),
     );
-    const usable = measured.filter((m) => !(m.result.needs_retake ?? m.result.retake) && m.result.chest_cm != null);
+    // Usable = the CV pipeline returned real, non-zero dimensions. A `chest_cm != null` check is not
+    // enough: a 0 cm chest is non-null and would be graded as the smallest size, inventing a label
+    // for a garment that was never actually measured.
+    const usable = measured.filter(
+      (m) => !(m.result.needs_retake ?? m.result.retake) && Object.keys(dimsOf(m.result)).length >= 2,
+    );
 
     // No photo yielded a reliable measurement → ask for a retake, never invent a size.
     if (usable.length === 0) {

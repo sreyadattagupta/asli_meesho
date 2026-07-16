@@ -1,47 +1,36 @@
 // Map real VLM/CV measurements → Meesho size taxonomy, per garment category.
 //
-// The size is DERIVED from the measured centimetres, so it changes with the garment: a narrow
-// kurti and a wide one land on different rows. There are no fixed per-image predictions here — the
-// only constants are the published garment-industry size bands (real charts), and which body
-// dimension a category is sized by (tops → chest, bottoms → waist).
+// The size is DERIVED from the measured centimetres against the FITTED grade params
+// (lib/grading.json — least-squares slopes over the published size-chart dataset, versioned on the
+// HF Hub), so it changes with the garment: a narrow kurti and a wide one land on different rows.
+// There is no hand-typed band table and no per-image prediction here — the model predicts each
+// size's centimetres and we take the nearest. A dimension the CV pipeline did not measure yields
+// NO size (null), never a fabricated label.
 
 import type { MeasureResult } from "./vlmClient";
+import params from "./grading.json";
 import type { GradeDim } from "./grading";
 
 export type MeeshoSize = "XS" | "S" | "M" | "L" | "XL" | "XXL" | "XXXL" | "4XL" | "Free Size";
 
-type Band = { size: MeeshoSize; maxCm: number };
+type FittedDim = { slope: number; intercept: number };
+type FittedCategory = { dims: Record<string, FittedDim>; sized_by: GradeDim };
+const FITTED = params.categories as unknown as Record<string, FittedCategory>;
 
-// Flat-lay chest width (pit-to-pit) → label. As-worn chest ≈ 2 × flat width; these bands are the
-// standard women's apparel grade (e.g. flat chest 44 cm ≈ 34" bust = S).
-const CHEST_BANDS: Band[] = [
-  { size: "XS", maxCm: 42 },
-  { size: "S", maxCm: 46 },
-  { size: "M", maxCm: 50 },
-  { size: "L", maxCm: 54 },
-  { size: "XL", maxCm: 58 },
-  { size: "XXL", maxCm: 62 },
-  { size: "XXXL", maxCm: Infinity },
-];
-
-// Flat-lay waist width → label, for bottoms (leggings, pants, skirts).
-const WAIST_BANDS: Band[] = [
-  { size: "XS", maxCm: 33 },
-  { size: "S", maxCm: 37 },
-  { size: "M", maxCm: 41 },
-  { size: "L", maxCm: 45 },
-  { size: "XL", maxCm: 49 },
-  { size: "XXL", maxCm: 53 },
-  { size: "XXXL", maxCm: Infinity },
-];
-
-// Which dimension sizes each category. Anything not apparel-graded (saree cloth, jewellery,
-// footwear) reports its measurements but a "Free Size" label — a fixed S/M/L would be fabricated.
-const CHEST_CATEGORIES = new Set(["kurtis", "kurti", "dress", "dresses", "tops", "top", "shirt"]);
-const WAIST_CATEGORIES = new Set(["bottoms", "bottom", "leggings", "pants", "trousers", "skirt"]);
+// Seller/marketplace category strings → the categories the fitted model actually grades. A category
+// the model does not grade (saree cloth, jewellery, footwear) gets its measurements reported but no
+// size label — a fixed S/M/L there would be fabricated.
+const CATEGORY_ALIASES: Record<string, string> = {
+  "": "top", top: "top", tops: "top", shirt: "top", tshirt: "top", "t-shirt": "top",
+  kurti: "kurti", kurtis: "kurti", kurta: "kurti",
+  dress: "dress", dresses: "dress", gown: "dress",
+  bottom: "bottom", bottoms: "bottom", leggings: "bottom", pants: "bottom",
+  trousers: "bottom", skirt: "bottom", jeans: "bottom",
+};
 
 export interface SizeChart {
-  size: MeeshoSize;
+  /** null when the sizing dimension was not measured, or the category is not graded by the model. */
+  size: MeeshoSize | null;
   chestCm: number;
   lengthCm: number;
   waistCm: number;
@@ -50,34 +39,41 @@ export interface SizeChart {
   sizedBy: "chest" | "waist" | "none";
 }
 
-function bandFor(cm: number, bands: Band[]): MeeshoSize {
-  return bands.find((b) => cm <= b.maxCm)?.size ?? bands[bands.length - 1].size;
+/**
+ * Nearest fitted size: the params predict cm = intercept + slope × size_ord for every size, so we
+ * pick the size whose PREDICTED measurement is closest to the one we actually measured. Data-derived
+ * (the slopes come from the graded dataset), not a hardcoded cutoff table.
+ */
+function sizeFromFit(cm: number, cat: FittedCategory, dim: GradeDim): MeeshoSize | null {
+  const p = cat.dims[dim];
+  if (!p || !(cm > 0)) return null; // unmeasured dimension ⇒ no size, never a guess
+  let best: MeeshoSize | null = null;
+  let bestErr = Infinity;
+  (params.sizes as MeeshoSize[]).forEach((size, ord) => {
+    const err = Math.abs(p.intercept + p.slope * ord - cm);
+    if (err < bestErr) { bestErr = err; best = size; }
+  });
+  return best;
 }
 
 /**
- * Real cm → size label. `category` selects the grading dimension; unknown/non-apparel ⇒ Free Size.
- * @deprecated Per-image band lookup is superseded by declared-size grading (lib/grading.ts
+ * Real measured cm → size label, using the fitted grade params. `category` selects the model row;
+ * the model's own `sized_by` picks the dimension (tops → chest, bottoms → waist).
+ * Returns `size: null` when nothing was measured or the category is not graded.
+ * @deprecated Per-image labelling is superseded by declared-size grading (lib/grading.ts
  * `gradeChart`). Kept for the buyer SizeChartTable + store until they migrate to the graded chart.
  */
 export function toSizeChart(m: MeasureResult, category?: string): SizeChart {
   const chest = m.chest_cm ?? 0;
   const length = m.length_cm ?? 0;
   const waist = m.waist_cm ?? 0;
-  const cat = (category ?? "").toLowerCase();
 
-  let size: MeeshoSize;
-  let sizedBy: SizeChart["sizedBy"];
-  if (WAIST_CATEGORIES.has(cat)) {
-    size = bandFor(waist, WAIST_BANDS);
-    sizedBy = "waist";
-  } else if (CHEST_CATEGORIES.has(cat) || cat === "") {
-    // Default to chest grading for apparel tops (and when category is unknown).
-    size = bandFor(chest, CHEST_BANDS);
-    sizedBy = "chest";
-  } else {
-    size = "Free Size";
-    sizedBy = "none";
-  }
+  const key = CATEGORY_ALIASES[(category ?? "").toLowerCase().trim()];
+  const cat = key ? FITTED[key] : undefined;
+  const dim = cat?.sized_by;
+  const measured = dim === "waist_cm" ? waist : chest;
+  const size = cat && dim ? sizeFromFit(measured, cat, dim) : null;
+  const sizedBy: SizeChart["sizedBy"] = !cat || !dim ? "none" : dim === "waist_cm" ? "waist" : "chest";
 
   return {
     size,

@@ -13,7 +13,9 @@ export interface Listing { id: string; sellerId: string; title: string; descript
 export interface ProductImage { id: string; listingId: string; url: string; imageHash: string; embeddingId?: string; kind: ImageKind; }
 export interface Challenge { code: string; listingId?: string; issuedAt: string; expiresAt: string; usedAt?: string; }
 export interface AuthenticityCheck { id: string; listingId: string; agent: string; payload: Record<string, unknown>; confidence: number; action: string; requiredConfidence: number; reason: string; createdAt: string; }
-export interface SizeMeasurement { id: string; listingId: string; chestCm: number; lengthCm: number; waistCm: number; referenceUsed: string; confidence: number; mappedSize: string; }
+// mappedSize is null when the garment was measured but the fitted model grades no size for it (an
+// ungraded category, or the sizing dimension was not recovered) — never a fabricated label.
+export interface SizeMeasurement { id: string; listingId: string; chestCm: number; lengthCm: number; waistCm: number; referenceUsed: string; confidence: number; mappedSize: string | null; }
 export interface Order { id: string; listingId: string; buyerUserId: string; address: Record<string, string>; paymentMethod: PaymentMethod; status: OrderStatus; placedAt: string; deliveredAt?: string; }
 export interface PromiseRecord { id: string; listingId: string; orderId?: string; frozen: Record<string, unknown>; deliveryPhotoUrl?: string; kept?: boolean; confidence?: number; checkedAt?: string; }
 export interface TrustEvent { id: string; sellerId: string; delta: number; reason: string; source: string; createdAt: string; }
