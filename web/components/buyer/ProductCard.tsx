@@ -28,14 +28,20 @@ export function ProductCard({ item }: { item: FeedItem }) {
         <h3 className="truncate text-sm font-medium text-zinc-800">{item.title}</h3>
         <div className="flex items-center justify-between gap-2">
           <span className="text-base font-bold text-zinc-900">₹{item.price}</span>
-          <span className="inline-flex items-center gap-1 rounded-full bg-asli-green/10 px-1.5 py-0.5 text-[11px] font-semibold text-asli-green">
+          {/* Labelled simulated because it is: no buyer has rated anything here (lib/feed.ts
+              seededRating). Left visible rather than removed so the card still reads like a
+              marketplace — but never passed off as real next to a measured size chart. */}
+          <span
+            className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-1.5 py-0.5 text-[11px] font-semibold text-zinc-500"
+            title="Sample rating — demo data, not from real buyers"
+          >
             <Star className="h-3 w-3 fill-current" aria-hidden />
             {item.rating}
             <span className="font-normal text-zinc-400">({item.ratingCount})</span>
           </span>
         </div>
         <div className="text-[11px] text-zinc-400">
-          Free Delivery · COD
+          <span className="text-zinc-300">rating simulated</span> · Free Delivery · COD
           {!item.verified && <span className="ml-1.5 text-zinc-300">· unverified</span>}
         </div>
       </div>

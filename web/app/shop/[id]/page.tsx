@@ -63,8 +63,17 @@ export default async function ProductPage({
                 {listing.title}
               </h1>
               <div className="mt-2 flex flex-wrap items-center gap-3 text-sm">
-                <span className="inline-flex items-center gap-1 rounded-full bg-asli-green/10 px-2 py-0.5 font-semibold text-asli-green">
+                {/* A hardcoded 4.3 sat here — the same number on every product, presented as if
+                    buyers had rated it. There is no review data in this system, so it is labelled
+                    rather than dressed up (invariant #9). The trust band beside it IS real. */}
+                <span
+                  className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 font-semibold text-zinc-500"
+                  title="Sample rating — demo data, not from real buyers"
+                >
                   <Star className="h-3.5 w-3.5 fill-current" aria-hidden /> 4.3
+                  <span className="ml-1 text-[10px] font-normal uppercase tracking-wide text-zinc-400">
+                    simulated
+                  </span>
                 </span>
                 <span className="inline-flex items-center gap-1 text-zinc-500">
                   <Store className="h-3.5 w-3.5" aria-hidden />

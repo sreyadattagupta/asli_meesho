@@ -8,7 +8,15 @@ export interface FeedItem {
   sellerBand: TrustBand;
 }
 
-/** Deterministic pseudo-rating 3.8–4.9 from the listing id — stable across refetches. */
+/**
+ * SIMULATED rating — there is no buyer-review data in this system.
+ *
+ * Derived from the listing id so it is at least stable across refetches rather than flickering. It
+ * is NOT a real rating: nobody rated these listings, and the `reviews` table is the Trust & Safety
+ * queue, not product reviews. Every surface that renders this MUST label it `simulated`
+ * (invariant #9) — an invented 4.8 next to a genuinely measured size chart would poison the one
+ * thing on the page that is real.
+ */
 function seededRating(id: string): { rating: number; ratingCount: number } {
   let h = 0;
   for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
