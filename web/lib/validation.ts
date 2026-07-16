@@ -30,6 +30,28 @@ export const listingUpdateSchema = z
   .strict()
   .refine((v) => Object.keys(v).length > 0, { message: "Nothing to update." });
 
+/**
+ * Seller business profile. Closed set: trustScore, trustBand, passes, fails and kycStatus are the
+ * agents' and reviewers' to write — a seller who could PATCH their own trust score would skip the
+ * checks that score exists to gate.
+ *
+ * GST/PAN are format-checked because a wrong-shaped one is a typo worth catching at the edge, not a
+ * mystery later. Only the last four bank digits are accepted — enough for a seller to recognise
+ * their payout account, and nothing worth stealing.
+ */
+export const sellerProfileSchema = z
+  .object({
+    businessName: z.string().min(2).max(120).optional(),
+    shopName: z.string().min(2).max(120).optional(),
+    gst: z.string().regex(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]{3}$/, "GST must look like 27AAPFU0939F1ZV.").optional().or(z.literal("")),
+    pan: z.string().regex(/^[A-Z]{5}[0-9]{4}[A-Z]$/, "PAN must look like AAPFU0939F.").optional().or(z.literal("")),
+    address: z.string().max(300).optional(),
+    mobile: z.string().regex(/^[6-9][0-9]{9}$/, "Enter a 10-digit Indian mobile number.").optional().or(z.literal("")),
+    bankLast4: z.string().regex(/^[0-9]{4}$/, "Last 4 digits only.").optional().or(z.literal("")),
+  })
+  .strict()
+  .refine((v) => Object.keys(v).length > 0, { message: "Nothing to update." });
+
 export const orderCreateSchema = z.object({
   listingId: z.string().min(1),
   paymentMethod: z.enum(["cod", "upi_mock"]),
