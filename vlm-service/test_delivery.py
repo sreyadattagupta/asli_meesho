@@ -39,10 +39,21 @@ def test_identical_delivery_is_kept(monkeypatch):
 
 @pytest.mark.skipif(not PROOF.exists(), reason="proof fixtures not present")
 def test_different_item_not_same_product(monkeypatch):
+    """A genuinely different garment delivered must not read as the same product.
+
+    Fixtures are two REAL photos of different garments. It previously paired catalog_real.jpg with
+    live_otheritem.jpg and asserted they differ — but gen_test_data.py draws both from the SAME
+    polygon, one blue and one red. They are one object in two colours, and the embedding gate scores
+    them ~0.93 (base AND large) because that is the truth. The test failed for years against a
+    correct gate.
+
+    It also assumed the VLM stub decided same_product ("phash backend defers to the VLM stub"). The
+    embedding gate now decides from the image itself, so a stub cannot force the verdict — which is
+    the point: possession must be proven by pixels, not by whatever the model says.
+    """
     monkeypatch.setattr(vlm_backend, "run_vlm", _stub(False, "shoe"))
-    cat = (PROOF / "catalog_real.jpg").read_bytes()
-    other = (PROOF / "live_otheritem.jpg").read_bytes()
-    b = _post(other, cat, category="saree").json()
-    # phash backend defers same-product to the VLM stub (False here); confidence stays bounded.
+    cat = (PROOF / "real_kurti_catalog.png").read_bytes()
+    other = (PROOF / "real_other_dress.png").read_bytes()
+    b = _post(other, cat, category="kurti").json()
     assert b["same_product"] is False
     assert b["confidence"] < b["cosine"] + 1.0
