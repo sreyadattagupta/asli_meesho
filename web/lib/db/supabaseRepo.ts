@@ -207,8 +207,10 @@ export class SupabaseRepo implements Repo {
   listSellers() {
     return this.many(this.sb.from("sellers").select().order("created_at"), sellerFromDb);
   }
-  createSeller(s: Omit<Seller, "id" | "createdAt">) {
-    return this.one(this.sb.from("sellers").insert(sellerToDb(s)).select().single(), sellerFromDb);
+  createSeller(s: Omit<Seller, "id" | "createdAt"> & { id?: string }) {
+    // `id` only when restoring a known seller identity; otherwise let Postgres default it.
+    const row = s.id ? { ...sellerToDb(s), id: s.id } : sellerToDb(s);
+    return this.one(this.sb.from("sellers").insert(row).select().single(), sellerFromDb);
   }
   updateSeller(id: string, patch: Partial<Seller>) {
     return this.one(this.sb.from("sellers").update(sellerToDb(patch)).eq("id", id).select().single(), sellerFromDb);

@@ -90,14 +90,27 @@ export function ProductRow({
       <td className="px-3 font-mono text-xs text-white/60">{chart}</td>
       <td className="py-3 pl-3">
         <div className="flex flex-wrap items-center justify-end gap-1">
-          <Link
-            href={`/shop/${listing.id}`}
-            className="rounded-lg p-2 text-white/50 transition hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-asli-violet"
-            aria-label={`View ${listing.title}`}
-            title="View"
-          >
-            <Eye className="h-4 w-4" aria-hidden />
-          </Link>
+          {/* The public page only exists once a listing is live — /shop/:id notFound()s otherwise.
+              Linking a draft there would 404 the seller out of their own portal, so it's disabled
+              with the reason. `from=seller` gives the product page a back link that returns here. */}
+          {listing.status === "live" ? (
+            <Link
+              href={`/shop/${listing.id}?from=seller`}
+              className="rounded-lg p-2 text-white/50 transition hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-asli-violet"
+              aria-label={`View ${listing.title} in the marketplace`}
+              title="View in the marketplace"
+            >
+              <Eye className="h-4 w-4" aria-hidden />
+            </Link>
+          ) : (
+            <span
+              className="cursor-not-allowed rounded-lg p-2 text-white/15"
+              title="Publish this listing to give it a marketplace page"
+              aria-label={`${listing.title} has no marketplace page until it is published`}
+            >
+              <Eye className="h-4 w-4" aria-hidden />
+            </span>
+          )}
 
           {/* Re-running the agents means walking the real flow — there is no "just re-score" shortcut
               that wouldn't fabricate a result, so this routes to the flow rather than faking one. */}

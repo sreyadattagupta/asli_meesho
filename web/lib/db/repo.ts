@@ -14,7 +14,11 @@ export interface Repo {
   // sellers
   getSeller(id: string): Promise<Seller | null>;
   listSellers(): Promise<Seller[]>;
-  createSeller(s: Omit<Seller, "id" | "createdAt">): Promise<Seller>;
+  /**
+   * Create a seller. `id` is optional and normally omitted — pass it only to RESTORE a known seller
+   * identity (lib/account.ts, from the Mongo account) so the seller's existing listings stay theirs.
+   */
+  createSeller(s: Omit<Seller, "id" | "createdAt"> & { id?: string }): Promise<Seller>;
   updateSeller(id: string, patch: Partial<Seller>): Promise<Seller>;
   // listings
   createListing(l: Omit<Listing, "id" | "createdAt">): Promise<Listing>;

@@ -13,6 +13,13 @@ export interface AccountDoc {
   name: string;
   role: Role;
   createdAt: string;
+  // The seller identity this login owns. Listings, orders, trust and measurements are all keyed by
+  // sellerId, so this is the durable link between "who signed in" and "whose products these are".
+  // Kept here because the account IS the identity: the app store (Supabase/in-memory) holds the
+  // seller's data, but if it is ever rebuilt and this id were only there, ensureRepoUser would mint
+  // a fresh sellerId and silently orphan every listing the seller owns.
+  sellerId?: string;
+  shopName?: string;
 }
 
 const URI = process.env.MONGODB_URI;

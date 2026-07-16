@@ -12,24 +12,34 @@ export const dynamic = "force-dynamic";
 // Product detail — gallery, AI-measured size chart, seller trust, explainable trust panel.
 export default async function ProductPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ from?: string }>;
 }) {
   const { id } = await params;
+  const { from } = await searchParams;
   const bundle = await getListingBundle(id);
   if (!bundle || bundle.listing.status !== "live") notFound();
   const { listing, images, trustBand } = bundle;
   const gallery = images.filter((i) => i.kind === "catalog");
   const hero = gallery[0]?.url ?? "/mock/kurtis-1.svg";
 
+  // A seller who opened this from their portal is standing in the buyer surface, which has no seller
+  // nav — "Back to shop" would strand them a second time. Send them back where they came from.
+  const back =
+    from === "seller"
+      ? { href: "/seller/products", label: "Back to your products" }
+      : { href: "/shop", label: "Back to shop" };
+
   return (
     <div className="buyer-surface">
       <div className="mx-auto max-w-6xl px-4 py-5">
         <Link
-          href="/shop"
+          href={back.href}
           className="inline-flex min-h-[44px] items-center gap-1.5 text-sm font-medium text-zinc-500 hover:text-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-meesho-pink"
         >
-          <ArrowLeft className="h-4 w-4" aria-hidden /> Back to shop
+          <ArrowLeft className="h-4 w-4" aria-hidden /> {back.label}
         </Link>
 
         <div className="mt-3 grid gap-5 lg:grid-cols-[1.1fr_1fr]">
