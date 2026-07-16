@@ -13,6 +13,7 @@ import { Mail, Lock, User as UserIcon, ShieldCheck, Store, ShoppingBag, Shield }
 import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui/Card";
 import { useT } from "@/lib/i18n";
+import { useSessionStore } from "@/lib/store";
 import { fadeSlideUp } from "@/lib/motion";
 import type { Role } from "@/lib/db/types";
 
@@ -76,6 +77,11 @@ export function LoginClient({ devLogin = false }: { devLogin?: boolean }) {
         // Don't strand them on a portal their account can't open — explain and take them to theirs.
         setNotice(`This account is a ${actual}. Opening the ${ROLE_LABEL[actual]}.`);
       }
+      // Re-read the session before navigating. AppShell fetches it once on mount and lives in the
+      // root layout, so it never remounts on a client navigation — without this the header kept
+      // offering "Sign in" to a signed-in user. router.refresh() only re-renders server components;
+      // it cannot repopulate this client store.
+      await useSessionStore.getState().fetchSession();
       const dest = returnTo() ?? ROLE_HOME[actual];
       router.push(dest);
       router.refresh();
