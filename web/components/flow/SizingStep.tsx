@@ -42,6 +42,8 @@ export default function SizingStep() {
     removeFlatlay,
     setMeasureResult,
     setSizeChart,
+    // Aliased: `setDeclaredSize` below is this step's local selection state.
+    setDeclaredSize: setStoreDeclaredSize,
     setStep,
   } = useSellerStore();
   const t = useT();
@@ -107,6 +109,9 @@ export default function SizingStep() {
       setGarmentType(typeof m.garment_type === "string" ? m.garment_type : null);
       setProvider(typeof m.provider === "string" ? m.provider : null);
       setSizeChart(toSizeChart(m, category)); // band label kept for the store/review/buyer surfaces
+      // The size the seller declared is what the chart is anchored on and what we persist as
+      // mappedSize — carry it so the go-live screen doesn't announce a different size.
+      setStoreDeclaredSize(declaredSize || undefined);
       if (typeof m.bestIndex === "number") setBestIndex(m.bestIndex);
       // Graded chart (declared-size path): anchor on the seller-declared size, per-dim confidence.
       if (m.chart && declaredSize && m.confidence && typeof m.confidence === "object") {

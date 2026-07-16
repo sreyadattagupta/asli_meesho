@@ -48,7 +48,7 @@ function runConfetti(canvas: HTMLCanvasElement): () => void {
 
 // Step 6 — the listing goes LIVE, Asli Verified.
 export default function ResultStep() {
-  const { sizeChart, catalogPreview, draft, reset } = useSellerStore();
+  const { sizeChart, declaredSize, catalogPreview, draft, reset } = useSellerStore();
   const t = useT();
   useVoiceGuide("flow.result.voice");
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -80,7 +80,10 @@ export default function ResultStep() {
               <div className="truncate font-semibold">{draft.title || "Verified listing"}</div>
               <div className="text-xs text-white/40">
                 ₹{draft.price}
-                {sizeChart ? ` · Size ${sizeChart.size} · chest ${sizeChart.chestInches}"` : ""}
+                {/* The seller's declared tag size wins: it is what the chart is anchored on and what
+                    we persisted as mappedSize. Falling back to the derived band label announced a
+                    different size ("Size XS" for a garment the seller listed as L). */}
+                {sizeChart ? ` · Size ${declaredSize ?? sizeChart.size ?? "—"} · chest ${sizeChart.chestInches}"` : ""}
               </div>
             </div>
             <VerifiedBadge size="sm" />

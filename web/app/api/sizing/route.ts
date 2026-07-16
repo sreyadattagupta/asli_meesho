@@ -5,6 +5,8 @@ import { toSizeChart, fuseMeasurements, type PerImageMeasure } from "@/lib/sizin
 import { gradeChart, type GradeDim } from "@/lib/grading";
 import { dimensionConfidence } from "@/lib/confidence";
 import { repoReady } from "@/lib/db";
+import { assertOwnedListing } from "@/lib/listingOwnership";
+import { HttpError } from "@/lib/auth";
 import { fail, ok } from "@/lib/api";
 
 const DIMS: GradeDim[] = ["chest_cm", "waist_cm", "length_cm", "shoulder_cm", "sleeve_cm"];
@@ -101,6 +103,9 @@ export async function POST(req: Request) {
     }
 
     if (listingId) {
+      // Writing to a listing requires owning it. Without this, any caller could name another shop's
+      // listing and overwrite its measured size chart.
+      await assertOwnedListing(listingId);
       const repo = await repoReady();
       const listing = await repo.getListing(listingId);
       if (listing) {
@@ -148,6 +153,9 @@ export async function POST(req: Request) {
       bestIndex: measured.indexOf(best),
     });
   } catch (e) {
+    // An auth/ownership refusal is not a VLM outage — reporting 502 would tell the seller to retry
+    // something that will never succeed.
+    if (e instanceof HttpError) return fail(e.status, e.code, e.message);
     return fail(502, "vlm_unavailable", `Measurement failed: ${String(e)}`);
   }
 }

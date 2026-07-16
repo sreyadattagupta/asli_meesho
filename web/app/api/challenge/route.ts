@@ -1,7 +1,8 @@
 import crypto from "crypto";
-import { getSessionUser } from "@/lib/auth";
+import { getSessionUser, HttpError } from "@/lib/auth";
 import { repoReady } from "@/lib/db";
 import { vlmMatch } from "@/lib/vlmClient";
+import { assertOwnedListing } from "@/lib/listingOwnership";
 import { fail, ok } from "@/lib/api";
 import { rateLimited } from "@/lib/rateLimit";
 import { exifFreshness } from "@/lib/engines/exif";
@@ -41,6 +42,10 @@ export async function POST(req: Request) {
     if (!(catalog instanceof Blob) || !(live instanceof Blob) || typeof code !== "string") {
       return fail(400, "invalid_body", "catalog, live (camera) and code are required.");
     }
+
+    // Prove ownership BEFORE claiming the code: a failed claim burns a single-use code, so letting a
+    // stranger reach it would let them spend someone else's codes.
+    if (listingId) await assertOwnedListing(listingId);
 
     const repo = await repoReady();
     // Signed-out local demo has no server-side draft; single-use still enforced via the claim.
@@ -83,6 +88,9 @@ export async function POST(req: Request) {
 
     return ok(result);
   } catch (e) {
+    // Ownership/auth refusals must keep their own status — a 502 would read as "the VLM is down,
+    // try again", which is both wrong and an invitation to retry.
+    if (e instanceof HttpError) return fail(e.status, e.code, e.message);
     return fail(502, "vlm_unavailable", `Verification failed: ${String(e)}`);
   }
 }

@@ -73,6 +73,8 @@ interface SellerStore {
   flatlayPreviews: string[];
   measureResult?: MeasureResult;
   sizeChart?: SizeChart;
+  /** The true tag size the seller declared — what the graded chart is anchored on. */
+  declaredSize?: string;
 
   // human-in-the-loop approval gate (step 5)
   approved?: boolean;
@@ -93,6 +95,7 @@ interface SellerStore {
   removeFlatlay: (index: number) => void;
   setMeasureResult: (r: MeasureResult) => void;
   setSizeChart: (c: SizeChart | undefined) => void;
+  setDeclaredSize: (s: string | undefined) => void;
   setApproved: (approved: boolean) => void;
   reset: () => void;
 }
@@ -230,6 +233,7 @@ export const useSellerStore = create<SellerStore>()(
   },
   setMeasureResult: (measureResult) => set({ measureResult }),
   setSizeChart: (sizeChart) => set({ sizeChart }),
+  setDeclaredSize: (declaredSize) => set({ declaredSize }),
   setApproved: (approved) => set({ approved }),
   reset: () => {
     const c = get().catalogPreview;
@@ -239,6 +243,7 @@ export const useSellerStore = create<SellerStore>()(
       ...initialFlow,
       attempt: 0,
       listingId: undefined,
+      declaredSize: undefined,
       draft: initialDraft,
       catalogFile: undefined,
       catalogPreview: undefined,
@@ -268,6 +273,7 @@ export const useSellerStore = create<SellerStore>()(
         attempt: s.attempt,
         trigger: s.trigger,
         catalogDataUrl: s.catalogDataUrl,
+        declaredSize: s.declaredSize,
       }),
       // Rebuild the catalog File + preview from the persisted data URL so the flow can continue.
       onRehydrateStorage: () => (state) => {

@@ -8,30 +8,43 @@ import type { Repo } from "./repo";
 const globalForRepo = globalThis as unknown as {
   __asliRepo?: Repo;
   __asliRepoReady?: Promise<void>;
-  __asliRepoCtor?: unknown;
+  __asliRepoShape?: string;
 };
 
 /**
- * Surviving HMR has a catch: edit a repo class and HMR hands us a NEW class object, but the cached
- * INSTANCE still comes from the old one — so a method added in that edit does not exist on it and
- * every route 500s until the dev server is restarted (`repo.listImageMeta is not a function`). The
- * constructor's identity changes on reload, so compare it and rebuild when it moves.
+ * The repo class's SHAPE — its method names.
  *
- * Dev only: rebuilding re-runs the seed, which must never happen mid-life in production. There the
- * class object is stable for the process, so this would be a no-op anyway — but scope it explicitly
- * rather than rely on that.
+ * Not the constructor's identity: Next dev hands each route bundle its own copy of the class, so
+ * identity differs between two perfectly current bundles. Comparing identity rebuilt the repo on
+ * almost every navigation, re-running the seed and silently destroying registered users and
+ * created listings mid-session — far worse than the stale instance it was meant to catch.
+ *
+ * Shape distinguishes the two cases: duplicate copies of the same code share a shape, while a class
+ * that gained a method in an edit does not.
  */
-function isStale(Ctor: unknown): boolean {
+function shapeOf(Ctor: new () => Repo): string {
+  return Object.getOwnPropertyNames(Ctor.prototype).sort().join(",");
+}
+
+/**
+ * Rebuild only when the code actually changed under us. Editing a repo class leaves the cached
+ * INSTANCE built from the old class, so a method added in that edit is missing and every route 500s
+ * (`repo.listImageMeta is not a function`) until the dev server restarts.
+ *
+ * Dev only: a rebuild re-runs the seed, which must never happen mid-life in production.
+ */
+function isStale(shape: string): boolean {
   if (process.env.NODE_ENV === "production") return false;
-  return globalForRepo.__asliRepoCtor !== undefined && globalForRepo.__asliRepoCtor !== Ctor;
+  return globalForRepo.__asliRepoShape !== undefined && globalForRepo.__asliRepoShape !== shape;
 }
 
 /** Singleton Repo. In-memory locally, Supabase when DATA_BACKEND=supabase; seeded once per process. */
 export function getRepo(): Repo {
   const Ctor = process.env.DATA_BACKEND === "supabase" ? SupabaseRepo : InMemoryRepo;
-  if (!globalForRepo.__asliRepo || isStale(Ctor)) {
+  const shape = shapeOf(Ctor);
+  if (!globalForRepo.__asliRepo || isStale(shape)) {
     globalForRepo.__asliRepo = new Ctor();
-    globalForRepo.__asliRepoCtor = Ctor;
+    globalForRepo.__asliRepoShape = shape;
     globalForRepo.__asliRepoReady = seedRepo(globalForRepo.__asliRepo);
   }
   return globalForRepo.__asliRepo;
