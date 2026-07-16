@@ -57,6 +57,9 @@ export default function SizingStep() {
   const [declaredSize, setDeclaredSize] = useState<string>("");
   const [graded, setGraded] = useState<Graded | null>(null);
   const [garmentType, setGarmentType] = useState<string | null>(null);
+  // Which engine actually measured this garment, straight from the response — the UI must not claim
+  // an engine that did not run.
+  const [provider, setProvider] = useState<string | null>(null);
 
   async function loadDemoFlatlay() {
     const res = await fetch("/proof/flatlay_real.jpg");
@@ -102,6 +105,7 @@ export default function SizingStep() {
       }
       setMeasureResult(m);
       setGarmentType(typeof m.garment_type === "string" ? m.garment_type : null);
+      setProvider(typeof m.provider === "string" ? m.provider : null);
       setSizeChart(toSizeChart(m, category)); // band label kept for the store/review/buyer surfaces
       if (typeof m.bestIndex === "number") setBestIndex(m.bestIndex);
       // Graded chart (declared-size path): anchor on the seller-declared size, per-dim confidence.
@@ -268,7 +272,11 @@ export default function SizingStep() {
           </div>
           <p className="flex items-center gap-1 text-[10px] text-white/30">
             <ScanLine className="h-3 w-3" aria-hidden />
-            {t("flow.sizing.inferenceLabel")}
+            {/* Before measuring: what the pipeline will do. After: the engine the response says ran —
+                never a blanket "measured by <engine>" claim the backend did not make. */}
+            {provider
+              ? t("flow.sizing.inferenceRan").replace("{provider}", provider)
+              : t("flow.sizing.inferenceLabel")}
           </p>
           <button className="btn-ghost text-xs" onClick={loadDemoFlatlay}>
             {t("flow.sizing.demoBtn")}
