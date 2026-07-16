@@ -13,7 +13,8 @@ export default function UploadStep() {
   const { catalogPreview, draft, setDraft, setCatalog, setTrigger, setStep, setListingId } = useSellerStore();
   const t = useT();
   useVoiceGuide("flow.upload.voice");
-  const inputRef = useRef<HTMLInputElement>(null);
+  const galleryRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -112,9 +113,13 @@ export default function UploadStep() {
       </div>
 
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
-        <div
-          onClick={() => inputRef.current?.click()}
-          className="grid aspect-square cursor-pointer place-items-center overflow-hidden rounded-xl border border-dashed border-white/20 bg-white/[0.02] hover:border-asli-violet/50"
+        {/* A real <button>, not a div+onClick: the dropzone is the primary control on this step and
+            has to be reachable by keyboard and announced to a screen reader (invariant #11). */}
+        <button
+          type="button"
+          onClick={() => galleryRef.current?.click()}
+          aria-label={t("flow.upload.fromGallery")}
+          className="grid aspect-square cursor-pointer place-items-center overflow-hidden rounded-xl border border-dashed border-white/20 bg-white/[0.02] hover:border-asli-violet/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-asli-violet"
         >
           {catalogPreview ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -122,16 +127,35 @@ export default function UploadStep() {
           ) : (
             <span className="text-sm text-white/40">{t("flow.upload.choosePhoto")}</span>
           )}
-          <input
-            ref={inputRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])}
-          />
-        </div>
+        </button>
+
+        {/* Two explicit inputs rather than one: `capture` is a hint the browser applies at pick time,
+            so it cannot be toggled per click on an input that's already open. Gallery deliberately
+            omits it — the catalog photo is usually a supplier's, which is normal for a reseller
+            (invariant #1). Camera-only applies to the CHALLENGE step, never here. */}
+        <input
+          ref={galleryRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])}
+        />
+        <input
+          ref={cameraRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])}
+        />
 
         <div className="flex flex-col justify-center gap-3">
+          <button className="btn-ghost" onClick={() => galleryRef.current?.click()}>
+            {t("flow.upload.fromGallery")}
+          </button>
+          <button className="btn-ghost" onClick={() => cameraRef.current?.click()}>
+            {t("flow.upload.fromCamera")}
+          </button>
           <button className="btn-ghost" onClick={loadDemoCatalog}>
             {t("flow.upload.demoBtn")}
           </button>

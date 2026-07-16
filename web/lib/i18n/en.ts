@@ -51,6 +51,8 @@ export const en = {
   "flow.upload.priceLabel": "Price (₹)",
   "flow.upload.categoryLabel": "Category",
   "flow.upload.choosePhoto": "Click to choose a photo",
+  "flow.upload.fromGallery": "Upload from gallery",
+  "flow.upload.fromCamera": "Take a photo",
   "flow.upload.demoBtn": "Use demo catalog photo",
   "flow.upload.runCheck": "Run image check →",
   "flow.upload.checking": "Checking image…",

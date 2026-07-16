@@ -34,6 +34,8 @@ export const hi: Partial<Record<keyof typeof en, string>> = {
   "flow.upload.priceLabel": "क़ीमत (₹)",
   "flow.upload.categoryLabel": "श्रेणी",
   "flow.upload.choosePhoto": "फ़ोटो चुनने के लिए क्लिक करें",
+  "flow.upload.fromGallery": "गैलरी से अपलोड करें",
+  "flow.upload.fromCamera": "फ़ोटो लें",
   "flow.upload.demoBtn": "डेमो कैटलॉग फ़ोटो इस्तेमाल करें",
   "flow.upload.runCheck": "इमेज जाँच चलाएँ →",
   "flow.upload.checking": "इमेज जाँच रही है…",
