@@ -2,9 +2,13 @@ import type { Config } from "tailwindcss";
 
 // Deck palette — keep in sync with CLAUDE.md.
 const config: Config = {
+  // Every directory that can contain a class name must be listed. A missing glob does not error —
+  // the classes are silently purged and the UI renders at browser defaults (a `text-5xl` heading
+  // quietly shipping at 16px), which is far harder to spot than a build failure.
   content: [
     "./app/**/*.{ts,tsx}",
     "./components/**/*.{ts,tsx}",
+    "./features/**/*.{ts,tsx}",
     "./lib/**/*.{ts,tsx}",
   ],
   theme: {
