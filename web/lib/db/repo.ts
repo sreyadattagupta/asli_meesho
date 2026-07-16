@@ -1,6 +1,6 @@
 // The dual-backend data seam. Both InMemoryRepo and SupabaseRepo must satisfy this exactly.
 import type {
-  User, Role, Seller, Listing, ListingStatus, ProductImage, Challenge,
+  User, Role, Seller, Listing, ListingStatus, ProductImage, ImageMeta, Challenge,
   AuthenticityCheck, SizeMeasurement, Order, PromiseRecord, TrustEvent,
   Review, AuditEntry,
 } from "./types";
@@ -24,6 +24,16 @@ export interface Repo {
   // images
   addImage(i: Omit<ProductImage, "id">): Promise<ProductImage>;
   listImages(listingId: string): Promise<ProductImage[]>;
+  /** One image row by id — the only place that should pull the (possibly multi-MB) `url` blob. */
+  getImage(id: string): Promise<ProductImage | null>;
+  /**
+   * Image metadata for many listings in ONE query, deliberately WITHOUT `url`.
+   *
+   * `url` holds inline `data:image/...;base64,...` for anything captured through the seller flow
+   * (~937 KB per catalog image in prod). Any list view that only needs "which image belongs to which
+   * listing" must use this — selecting `url` across a feed ships megabytes and serialises the request.
+   */
+  listImageMeta(listingIds: string[]): Promise<ImageMeta[]>;
   // challenges (invariant #3)
   issueChallenge(code: string, ttlSeconds: number): Promise<Challenge>;
   /** Atomic single-use claim: null if unknown, expired, or already used. */

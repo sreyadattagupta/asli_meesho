@@ -11,6 +11,8 @@ export interface User { id: string; auth0Sub: string; email: string; name: strin
 export interface Seller { id: string; userId?: string; name: string; shopName: string; trustScore: number; trustBand: TrustBand; kycStatus: KycStatus; kycDocUrl?: string; isNew: boolean; passes: number; fails: number; createdAt: string; }
 export interface Listing { id: string; sellerId: string; title: string; description: string; price: number; category: string; status: ListingStatus; flowStep: string; verified: boolean; sizeChart?: Record<string, number>; rankBoost: number; createdAt: string; }
 export interface ProductImage { id: string; listingId: string; url: string; imageHash: string; embeddingId?: string; kind: ImageKind; }
+/** ProductImage without the `url` blob — what list views are allowed to load. See Repo.listImageMeta. */
+export type ImageMeta = Pick<ProductImage, "id" | "listingId" | "kind">;
 export interface Challenge { code: string; listingId?: string; issuedAt: string; expiresAt: string; usedAt?: string; }
 export interface AuthenticityCheck { id: string; listingId: string; agent: string; payload: Record<string, unknown>; confidence: number; action: string; requiredConfidence: number; reason: string; createdAt: string; }
 // mappedSize is null when the garment was measured but the fitted model grades no size for it (an

@@ -25,19 +25,31 @@ export async function buildFeed(filter?: string | null): Promise<FeedItem[]> {
     status: "live",
     verified: filter === "verified" ? true : undefined,
   });
-  return Promise.all(
-    listings.map(async (l) => {
-      const [images, seller] = await Promise.all([
-        repo.listImages(l.id),
-        repo.getSeller(l.sellerId),
-      ]);
-      return {
-        id: l.id, title: l.title, price: l.price, category: l.category,
-        verified: l.verified,
-        imageUrl: images.find((i) => i.kind === "catalog")?.url ?? "/mock/kurtis-1.svg",
-        ...seededRating(l.id),
-        sellerBand: seller?.trustBand ?? "low",
-      };
-    }),
-  );
+  if (listings.length === 0) return [];
+
+  // THREE queries total, never 1 + 2N. Per-listing listImages/getSeller meant ~35 round-trips for 18
+  // listings, and listImages pulls the inline base64 `url` — 60-90s against Supabase in production.
+  const [imageMeta, sellers] = await Promise.all([
+    repo.listImageMeta(listings.map((l) => l.id)),
+    repo.listSellers(),
+  ]);
+  const catalogByListing = new Map<string, string>();
+  for (const m of imageMeta) {
+    if (m.kind === "catalog" && !catalogByListing.has(m.listingId)) catalogByListing.set(m.listingId, m.id);
+  }
+  const bandBySeller = new Map(sellers.map((s) => [s.id, s.trustBand]));
+
+  return listings.map((l) => {
+    const imageId = catalogByListing.get(l.id);
+    return {
+      id: l.id, title: l.title, price: l.price, category: l.category,
+      verified: l.verified,
+      // Reference the image, never inline it: /api/images/:id streams the bytes (or redirects to a
+      // static path) so the browser lazy-loads and caches them instead of the feed carrying ~1 MB
+      // of base64 per card.
+      imageUrl: imageId ? `/api/images/${imageId}` : "/mock/kurtis-1.svg",
+      ...seededRating(l.id),
+      sellerBand: bandBySeller.get(l.sellerId) ?? "low",
+    };
+  });
 }

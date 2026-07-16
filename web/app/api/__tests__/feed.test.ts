@@ -1,5 +1,5 @@
 // Marketplace feed — verified-first ranking (simulated PRISM-style boost), live only.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { GET } from "@/app/api/listings/route";
 import { repoReady } from "@/lib/db";
 
@@ -45,5 +45,28 @@ describe("GET /api/listings (marketplace feed)", () => {
     // deterministic — same listing, same rating on refetch
     const again = (await (await get()).json()).listings[0];
     expect(again.rating).toBe(item.rating);
+  });
+
+  it("never inlines image bytes into the feed payload", async () => {
+    // /api/sizing persists flat-lays as `data:image/jpeg;base64,...` straight into product_images.url
+    // (avg ~937 KB each in prod). The feed used to `select()` every column for every listing, so it
+    // shipped megabytes of base64 per request — 60-90s on Supabase — and would have embedded a ~1 MB
+    // string into each card. Cards must reference an image URL the browser can lazy-load and cache.
+    const body = await (await get()).text();
+    expect(body).not.toContain("data:image");
+    expect(body.length).toBeLessThan(64 * 1024);
+    for (const l of JSON.parse(body).listings) {
+      expect(l.imageUrl.startsWith("data:")).toBe(false);
+    }
+  });
+
+  it("builds the feed in a bounded number of repo calls (no N+1)", async () => {
+    // One query per listing for images + one per seller meant 1 + 2N round-trips. Against a remote
+    // Postgres that is the whole latency budget; keep the feed batched.
+    const repo = await repoReady();
+    const spy = vi.spyOn(repo, "listImages");
+    await get();
+    expect(spy).not.toHaveBeenCalled(); // per-listing image fetch is the N+1
+    spy.mockRestore();
   });
 });

@@ -1,7 +1,7 @@
 // In-memory Repo implementation — local dev + tests, zero setup.
 import type { Repo } from "./repo";
 import type {
-  User, Role, Seller, Listing, ListingStatus, ProductImage, Challenge,
+  User, Role, Seller, Listing, ListingStatus, ProductImage, ImageMeta, Challenge,
   AuthenticityCheck, SizeMeasurement, Order, PromiseRecord, TrustEvent,
   Review, AuditEntry,
 } from "./types";
@@ -98,6 +98,16 @@ export class InMemoryRepo implements Repo {
   }
   async listImages(listingId: string): Promise<ProductImage[]> {
     return [...this.images.values()].filter(i => i.listingId === listingId);
+  }
+  async getImage(id: string): Promise<ProductImage | null> {
+    return this.images.get(id) ?? null;
+  }
+  async listImageMeta(listingIds: string[]): Promise<ImageMeta[]> {
+    const want = new Set(listingIds);
+    // Mirrors the Supabase impl: metadata only, never the `url` blob.
+    return [...this.images.values()]
+      .filter(i => want.has(i.listingId))
+      .map(({ id, listingId, kind }) => ({ id, listingId, kind }));
   }
 
   // ---- challenges (invariant #3: dynamic, time-bound, single-use) ----

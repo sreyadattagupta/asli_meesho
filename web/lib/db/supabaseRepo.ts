@@ -3,7 +3,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { Repo } from "./repo";
 import type {
-  User, Role, Seller, Listing, ListingStatus, ProductImage, Challenge,
+  User, Role, Seller, Listing, ListingStatus, ProductImage, ImageMeta, Challenge,
   AuthenticityCheck, SizeMeasurement, Order, PromiseRecord, TrustEvent,
   Review, AuditEntry,
 } from "./types";
@@ -230,6 +230,21 @@ export class SupabaseRepo implements Repo {
   }
   listImages(listingId: string) {
     return this.many(this.sb.from("product_images").select().eq("listing_id", listingId), imageFromDb);
+  }
+  getImage(id: string) {
+    return this.maybe(this.sb.from("product_images").select().eq("id", id).maybeSingle(), imageFromDb);
+  }
+  async listImageMeta(listingIds: string[]): Promise<ImageMeta[]> {
+    if (listingIds.length === 0) return [];
+    // Explicit column list — a bare select() would drag every inline base64 `url` (~937 KB each).
+    return this.many(
+      this.sb.from("product_images").select("id,listing_id,kind").in("listing_id", listingIds),
+      (r): ImageMeta => ({
+        id: r.id as string,
+        listingId: r.listing_id as string,
+        kind: r.kind as ProductImage["kind"],
+      }),
+    );
   }
 
   // challenges (invariant #3 — atomic conditional update)
