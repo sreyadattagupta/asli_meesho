@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { useSellerStore } from "@/lib/store";
 import { useT } from "@/lib/i18n";
 import { useVoiceGuide } from "@/lib/useVoiceGuide";
+import { PhotoCamera } from "@/components/ui/PhotoCamera";
 
 // Step 1 — catalog upload. Gallery upload is FINE here (invariant #2 only bans it
 // on the challenge step). This is the seller's listing photo.
@@ -14,7 +15,7 @@ export default function UploadStep() {
   const t = useT();
   useVoiceGuide("flow.upload.voice");
   const galleryRef = useRef<HTMLInputElement>(null);
-  const cameraRef = useRef<HTMLInputElement>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -129,31 +130,30 @@ export default function UploadStep() {
           )}
         </button>
 
-        {/* Two explicit inputs rather than one: `capture` is a hint the browser applies at pick time,
-            so it cannot be toggled per click on an input that's already open. Gallery deliberately
-            omits it — the catalog photo is usually a supplier's, which is normal for a reseller
-            (invariant #1). Camera-only applies to the CHALLENGE step, never here. */}
+        {/* Gallery deliberately omits `capture` — the catalog photo is usually a supplier's, which is
+            normal for a reseller (invariant #1). Camera-only applies to the CHALLENGE step, never here. */}
         <input
           ref={galleryRef}
           type="file"
           accept="image/*"
           className="hidden"
-          onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])}
-        />
-        <input
-          ref={cameraRef}
-          type="file"
-          accept="image/*"
-          capture="environment"
-          className="hidden"
-          onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])}
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) onFile(file);
+            // Clear the value or picking the SAME file twice fires nothing: `change` needs the value
+            // to differ, so a re-pick (or pick → demo photo → same pick) looks like a dead button.
+            e.target.value = "";
+          }}
         />
 
         <div className="flex flex-col justify-center gap-3">
           <button className="btn-ghost" onClick={() => galleryRef.current?.click()}>
             {t("flow.upload.fromGallery")}
           </button>
-          <button className="btn-ghost" onClick={() => cameraRef.current?.click()}>
+          {/* Opens a real getUserMedia camera. `capture="environment"` alone is a mobile-only hint:
+              desktop ignores it and shows a file picker, so this button was a second gallery button
+              on a laptop. PhotoCamera falls back to that input when there's no camera. */}
+          <button className="btn-ghost" onClick={() => setCameraOpen(true)}>
             {t("flow.upload.fromCamera")}
           </button>
           <button className="btn-ghost" onClick={loadDemoCatalog}>
@@ -175,6 +175,14 @@ export default function UploadStep() {
           <p className="text-xs text-white/40">{t("flow.upload.triggerNote")}</p>
         </div>
       </div>
+
+      {cameraOpen && (
+        <PhotoCamera
+          onCapture={onFile}
+          onClose={() => setCameraOpen(false)}
+          fallbackLabel={t("flow.upload.fromGallery")}
+        />
+      )}
     </div>
   );
 }
