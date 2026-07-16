@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   decide, requiredConfidence, stepForAction, MAX_ATTEMPTS, MATCH_THRESHOLD,
-  MSG_LIVE_PROOF_MISMATCH, MSG_LIVE_PROOF_BLOCKED,
+  MSG_LIVE_PROOF_MISMATCH, MSG_LIVE_PROOF_ESCALATED,
 } from "./orchestrator";
 
 const base = {
@@ -28,27 +28,28 @@ describe("decide — strict Agent-1 gate", () => {
     expect(decide({ ...base, matchConfidence: MATCH_THRESHOLD - 0.05, attempt: 0 }).action)
       .toBe("RE_CHALLENGE"));
 
-  it("BLOCKs a different item outright (the thief branch), with the exact blocked copy", () => {
+  it("a different item RE_CHALLENGEs (never a hard block), with the mismatch copy", () => {
     const d = decide({ ...base, sameItem: false, matchConfidence: 0.4, attempt: 0 });
-    expect(d.action).toBe("BLOCK");
-    expect(d.reason).toBe(MSG_LIVE_PROOF_BLOCKED);
+    expect(d.action).toBe("RE_CHALLENGE");
+    expect(d.reason).toBe(MSG_LIVE_PROOF_MISMATCH);
   });
 
-  it("BLOCKs when the code is not confirmed", () =>
-    expect(decide({ ...base, codeVisible: false, attempt: 0 }).action).toBe("BLOCK"));
+  it("RE_CHALLENGEs when the code is not confirmed (retry, never block)", () =>
+    expect(decide({ ...base, codeVisible: false, attempt: 0 }).action).toBe("RE_CHALLENGE"));
 
-  it("a close miss blocks once MAX_ATTEMPTS is exhausted (no infinite loop)", () => {
+  it("escalates to a human once the retry budget is spent — never BLOCK", () => {
     const under = { ...base, matchConfidence: MATCH_THRESHOLD - 0.05 };
     expect(decide({ ...under, attempt: MAX_ATTEMPTS - 1 }).action).toBe("RE_CHALLENGE");
     const d = decide({ ...under, attempt: MAX_ATTEMPTS });
-    expect(d.action).toBe("BLOCK");
-    expect(d.reason).toBe(MSG_LIVE_PROOF_BLOCKED);
+    expect(d.action).toBe("ESCALATE_HUMAN");
+    expect(d.reason).toBe(MSG_LIVE_PROOF_ESCALATED);
   });
 
-  it("a different item never AUTO_APPROVEs", () => {
-    for (let attempt = 0; attempt < MAX_ATTEMPTS + 2; attempt++) {
-      expect(decide({ ...base, sameItem: false, matchConfidence: 0.1, attempt }).action)
-        .not.toBe("AUTO_APPROVE");
+  it("never BLOCKs and never AUTO_APPROVEs a different item at any attempt", () => {
+    for (let attempt = 0; attempt <= MAX_ATTEMPTS + 2; attempt++) {
+      const a = decide({ ...base, sameItem: false, matchConfidence: 0.1, attempt }).action;
+      expect(a).not.toBe("AUTO_APPROVE");
+      expect(a).not.toBe("BLOCK");
     }
   });
 });
@@ -72,8 +73,8 @@ describe("decide — fast lane (Task 5.4)", () => {
   });
   it("ineligible path runs the strict gate when fastLane is false", () => {
     expect(decide(base, { fastLane: false }).action).toBe("AUTO_APPROVE");
-    // wrong item → BLOCK (a different product is a failed possession claim, not a fumble)
+    // wrong item → RE_CHALLENGE (retry, never a hard block; a human decides after the retry budget)
     expect(decide({ ...base, sameItem: false, matchConfidence: 0.1, attempt: 1 }, { fastLane: false }).action)
-      .toBe("BLOCK");
+      .toBe("RE_CHALLENGE");
   });
 });

@@ -1,7 +1,9 @@
 // VlmProvider seam — one contract, three implementations (Gemini deployed · Ollama local · Mock).
 // Selected by VLM_PROVIDER; wrapped in withDegradation so a real provider failure falls back to
 // the labelled MockProvider and flips a module-level `degraded` flag the admin monitor reads.
-import promptsJson from "../../../prompts/vlm-prompts.json";
+// Bundled copy of the repo-root prompts/vlm-prompts.json (single source), synced into web/ so the
+// Vercel build — whose root is web/ — can resolve it. Same committed-bundle pattern as lib/grading.json.
+import promptsJson from "./vlm-prompts.json";
 import { MockProvider } from "./mock";
 import { OllamaServiceProvider } from "./ollama";
 import { GeminiProvider } from "./gemini";
@@ -55,6 +57,8 @@ export interface MeasureResult {
   retake?: boolean;
   /** Human explanation of the measurement or the retake reason. */
   reason?: string;
+  /** Detected garment type (best-effort VLM read from the flat-lay); null if unavailable. */
+  garment_type?: string | null;
   chest_cm: number | null;
   length_cm: number | null;
   waist_cm: number | null;

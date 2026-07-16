@@ -55,6 +55,7 @@ export default function SizingStep() {
   const [scanning, setScanning] = useState(false);
   const [declaredSize, setDeclaredSize] = useState<string>("");
   const [graded, setGraded] = useState<Graded | null>(null);
+  const [garmentType, setGarmentType] = useState<string | null>(null);
 
   async function loadDemoFlatlay() {
     const res = await fetch("/proof/flatlay_real.jpg");
@@ -78,6 +79,7 @@ export default function SizingStep() {
     setBestIndex(null);
     setSizeChart(undefined);
     setGraded(null);
+    setGarmentType(null);
     try {
       const form = new FormData();
       files.forEach((f) => form.append("flatlay", f));
@@ -98,6 +100,7 @@ export default function SizingStep() {
         return;
       }
       setMeasureResult(m);
+      setGarmentType(typeof m.garment_type === "string" ? m.garment_type : null);
       setSizeChart(toSizeChart(m, category)); // band label kept for the store/review/buyer surfaces
       if (typeof m.bestIndex === "number") setBestIndex(m.bestIndex);
       // Graded chart (declared-size path): anchor on the seller-declared size, per-dim confidence.
@@ -340,6 +343,12 @@ export default function SizingStep() {
             <div>
               <h3 className="text-lg font-bold">{t("flow.sizing.gradedTitle")}</h3>
               <p className="text-xs text-white/45">{t("flow.sizing.gradedSubtitle")}</p>
+              {garmentType && (
+                <p className="mt-1 text-xs text-white/60">
+                  Detected garment:{" "}
+                  <span className="font-semibold capitalize text-asli-violet">{garmentType}</span>
+                </p>
+              )}
             </div>
             <span className="text-2xl font-black text-asli-violet">{graded.chart.anchoredOn}</span>
           </div>

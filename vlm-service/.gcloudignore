@@ -1,0 +1,18 @@
+# What NOT to upload to Cloud Build. Keep models/*.onnx (runtime) + vlm-prompts.json (bundled).
+.git/
+.gitignore
+.venv/
+.venv-export/
+__pycache__/
+**/__pycache__/
+*.pyc
+.env
+.env.local
+.env.example
+# transient eval/build artifacts (the committed model.onnx + *_calibration.json ARE needed)
+models/eval_cache_*.pkl
+models/*.log
+# tests + one-off dev tooling — not needed in the serving image
+test_*.py
+gen_test_data.py
+README.md

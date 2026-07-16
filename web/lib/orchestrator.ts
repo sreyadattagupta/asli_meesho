@@ -67,12 +67,12 @@ export interface OrchestratorDecision {
   reason: string;
 }
 
-// Attempt cap for the live proof. A close miss (right item, code confirmed, but similarity just
-// under the bar) earns a retry with a fresh single-use code; once the seller has burned through
-// MAX_ATTEMPTS the listing is blocked. A CLEAR failure (wrong/replaced item, or the code not
-// confirmed) blocks immediately — an honest seller fumbling framing gets retries; a thief presenting
-// a different product does not.
-export const MAX_ATTEMPTS = 2;
+// Live-Proof retry budget. Per the seller spec the flow NEVER hard-blocks: a mismatch always earns
+// another capture with a fresh single-use code (invariant #3). The seller gets up to MAX_ATTEMPTS
+// retries; only after exhausting them does the listing go to a HUMAN reviewer (escalate, not block) —
+// so an honest seller is never dead-ended, and a genuine thief is caught by the reviewer, not an
+// auto-verdict. Fraud stays backstopped by the single-use code + human review.
+export const MAX_ATTEMPTS = 10;
 
 // Same-product confidence floor for Agent 1 (Live Proof). Calibrated to the possession-confidence
 // scale the vlm-service actually emits under the segmentation + crop-CLIP/DINOv2 same-item gate: a
@@ -84,9 +84,12 @@ export const MATCH_THRESHOLD = Number(process.env.NEXT_PUBLIC_MATCH_THRESHOLD ??
 
 // Exact user-facing copy required by the Agent-1 spec — surfaced verbatim in the seller UI.
 export const MSG_LIVE_PROOF_MISMATCH =
-  "The uploaded live proof does not match your original catalog photo. Please retake the photo.";
-export const MSG_LIVE_PROOF_BLOCKED =
-  "Verification failed twice. This listing has been blocked for security reasons. Please start a new verification.";
+  "Product mismatch detected. Please capture the same product again.";
+// After the retry budget is spent we hand off to a human — never a hard security block.
+export const MSG_LIVE_PROOF_ESCALATED =
+  "We couldn't confirm the product after several attempts. Sending it to our team for a quick manual review — you're not blocked.";
+// Retained for back-compat with any importer; escalation (above) is the terminal state now.
+export const MSG_LIVE_PROOF_BLOCKED = MSG_LIVE_PROOF_ESCALATED;
 
 /** Which flow step the UI renders after an orchestrator action. */
 export function stepForAction(a: OrchestratorAction): FlowStep {
@@ -115,7 +118,8 @@ export function requiredConfidence(
 ): number {
   let bar = MATCH_THRESHOLD;
   if (s.sellerIsNew) bar += 0.03; // cold-start: a touch stricter until a record exists
-  bar += Math.min(s.attempt, MAX_ATTEMPTS) * 0.01; // each retry nudges the bar
+  bar += Math.min(s.attempt, 3) * 0.01; // small nudge for the first few retries, then plateau — with
+  // a 10-retry budget we must NOT keep tightening the bar into rejecting a genuine seller.
   return Math.min(bar, 0.9);
 }
 
@@ -153,19 +157,17 @@ export function decide(s: AgentSignals, opts?: { fastLane?: boolean }): Orchestr
     };
   }
 
-  // CLEAR FAILURE — a different/replaced product (same_item false) or the code not confirmed is not a
-  // fumble, it is a failed possession claim. Block it outright (this is the "thief blocked" branch).
-  // A close miss that has exhausted MAX_ATTEMPTS also blocks — no infinite retry loop.
-  if (!s.sameItem || !s.codeVisible || s.attempt >= MAX_ATTEMPTS) {
+  // NOT PASSED — different product, code not confirmed, or similarity under the bar. NEVER a hard
+  // block (seller spec): the seller re-captures with a FRESH single-use code (invariant #3). Only once
+  // the retry budget is spent does it go to a HUMAN reviewer — still not a dead-end for the seller.
+  if (s.attempt >= MAX_ATTEMPTS) {
     return {
-      action: "BLOCK",
+      action: "ESCALATE_HUMAN",
       requiredConfidence: bar,
-      reason: MSG_LIVE_PROOF_BLOCKED,
+      reason: MSG_LIVE_PROOF_ESCALATED,
     };
   }
 
-  // CLOSE MISS — right item, code confirmed, similarity just under the bar. Retry with a FRESH
-  // single-use code (invariant #3 keeps each code dynamic + single-use + TTL-bound) at a stricter bar.
   return {
     action: "RE_CHALLENGE",
     requiredConfidence: bar,

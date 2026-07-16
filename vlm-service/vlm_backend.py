@@ -28,15 +28,38 @@ _TIMEOUT = float(os.getenv("VLM_TIMEOUT", "120"))
 
 
 def _extract_json(text: str) -> dict:
-    """Pull a JSON object out of a response that may wrap it in prose/fences."""
+    """Pull the first balanced JSON object out of a response that may wrap it in prose/fences.
+
+    Uses a brace-depth scanner (quote/escape aware) rather than a greedy regex, so trailing prose
+    after the object — a common cause of JSONDecodeError on chatty replies — is dropped cleanly.
+    """
     text = (text or "").strip()
-    fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
-    if fenced:
-        text = fenced.group(1)
-    else:
-        brace = re.search(r"\{.*\}", text, re.DOTALL)
-        if brace:
-            text = brace.group(0)
+    fence = re.search(r"```(?:json)?\s*(.*?)\s*```", text, re.DOTALL)
+    if fence:
+        text = fence.group(1).strip()
+    start = text.find("{")
+    if start != -1:
+        depth = 0
+        in_str = False
+        esc = False
+        for i in range(start, len(text)):
+            ch = text[i]
+            if in_str:
+                if esc:
+                    esc = False
+                elif ch == "\\":
+                    esc = True
+                elif ch == '"':
+                    in_str = False
+            elif ch == '"':
+                in_str = True
+            elif ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    text = text[start:i + 1]
+                    break
     return json.loads(text)
 
 

@@ -53,22 +53,22 @@ describe("POST /api/asli/analyze", () => {
     listingId = l.id;
   });
 
-  it("thief (different item) ⇒ BLOCK immediately, listing marked blocked", async () => {
+  it("different item ⇒ RE_CHALLENGE (retry, never a hard block)", async () => {
     await addPossession({ same_item: false, code_visible: false, matchCount: 4 }, 0.1);
     const body = await (await analyze()).json();
-    expect(body.action).toBe("BLOCK");
-    expect(body.nextStep).toBe("review");
+    expect(body.action).toBe("RE_CHALLENGE");
+    expect(body.nextStep).toBe("challenge");
     const repo = await repoReady();
-    expect((await repo.getListing(listingId))?.status).toBe("blocked");
+    expect((await repo.getListing(listingId))?.status).not.toBe("blocked");
   });
 
-  it("repeated thief attempts stay BLOCKED", async () => {
+  it("repeated mismatch attempts keep retrying (still not blocked)", async () => {
     await addPossession({ same_item: false, code_visible: false, matchCount: 4 }, 0.1);
     await addPossession({ same_item: false, code_visible: false, matchCount: 4 }, 0.1);
     const body = await (await analyze()).json();
-    expect(body.action).toBe("BLOCK");
+    expect(body.action).toBe("RE_CHALLENGE");
     const repo = await repoReady();
-    expect((await repo.getListing(listingId))?.status).toBe("blocked");
+    expect((await repo.getListing(listingId))?.status).not.toBe("blocked");
   });
 
   it("below the confidence bar on the first attempt ⇒ RE_CHALLENGE with nextStep challenge", async () => {
@@ -79,14 +79,14 @@ describe("POST /api/asli/analyze", () => {
     expect(body.nextStep).toBe("challenge");
   });
 
-  it("code never confirmed ⇒ BLOCK (a failed possession claim, not a fumble)", async () => {
+  it("mismatch past the retry budget ⇒ ESCALATE_HUMAN (human review, never blocked)", async () => {
     for (let i = 0; i <= MAX_ATTEMPTS + 2; i++) {
       await addPossession({ same_item: true, code_visible: false, matchCount: 4 }, 0.6);
     }
     const body = await (await analyze()).json();
-    expect(body.action).toBe("BLOCK");
+    expect(body.action).toBe("ESCALATE_HUMAN");
     const repo = await repoReady();
-    expect((await repo.getListing(listingId))?.status).toBe("blocked");
+    expect((await repo.getListing(listingId))?.status).toBe("escalated");
   });
 
   it("pass ⇒ AUTO_APPROVE with nextStep sizing", async () => {

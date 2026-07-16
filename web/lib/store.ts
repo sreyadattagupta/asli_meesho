@@ -40,6 +40,11 @@ export interface Challenge {
 interface SellerStore {
   step: FlowStep;
 
+  // Which seller this persisted flow belongs to (sellerId ?? name). The flow is stored in
+  // localStorage, so without this a NEW seller signing in on the same browser would inherit the
+  // previous seller's finished flow ("all done" without uploading). SellPage resets on a mismatch.
+  ownerKey?: string;
+
   // server-side listing draft (created on flow entry; absent in signed-out demo mode)
   listingId?: string;
   draft: { title: string; price: number; category: "sarees" | "kurtis" | "footwear" | "jewellery" };
@@ -73,6 +78,7 @@ interface SellerStore {
   approved?: boolean;
 
   setStep: (step: FlowStep) => void;
+  setOwnerKey: (key: string) => void;
   setListingId: (id: string) => void;
   setDraft: (d: Partial<SellerStore["draft"]>) => void;
   setCatalog: (file: File) => void;
@@ -184,6 +190,7 @@ export const useSellerStore = create<SellerStore>()(
   flatlayFiles: [],
   flatlayPreviews: [],
   setStep: (step) => set({ step }),
+  setOwnerKey: (ownerKey) => set({ ownerKey }),
   setListingId: (listingId) => set({ listingId }),
   setDraft: (d) => set({ draft: { ...get().draft, ...d } }),
   setCatalog: (catalogFile) => {
@@ -254,6 +261,7 @@ export const useSellerStore = create<SellerStore>()(
       // result can't (or shouldn't) survive a reload; the catalog rides along as a data URL and the
       // challenge code is re-issued fresh on the challenge step (invariant #3 — never reuse a code).
       partialize: (s) => ({
+        ownerKey: s.ownerKey,
         step: s.step,
         draft: s.draft,
         listingId: s.listingId,
