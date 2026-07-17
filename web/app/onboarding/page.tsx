@@ -11,11 +11,10 @@ import { KycOnboarding } from "@/components/seller/KycOnboarding";
 import { useT } from "@/lib/i18n";
 import { fadeSlideUp, staggerChildren } from "@/lib/motion";
 import { useSessionStore } from "@/lib/store";
+import { ROLE_HOME } from "@/lib/roles";
 import type { Role } from "@/lib/db/types";
 import type { LucideIcon } from "lucide-react";
 import type { I18nKey } from "@/lib/i18n/en";
-
-const roleHome: Record<Role, string> = { seller: "/seller", buyer: "/shop", admin: "/admin" };
 
 const cards: { role: Role; icon: LucideIcon; titleKey: I18nKey; hintKey: I18nKey }[] = [
   { role: "seller", icon: Store, titleKey: "onboarding.seller", hintKey: "onboarding.seller.hint" },
@@ -48,7 +47,7 @@ export default function OnboardingPage() {
       setUser({ ...(user ?? { name: body.user.name }), role: body.user.role, name: body.user.name, sellerId: body.user.sellerId });
       // Sellers complete KYC before entering the flow; buyers/admins go straight to their home.
       if (role === "seller") { setPhase("kyc"); return; }
-      router.push(roleHome[role]);
+      router.push(ROLE_HOME[role]);
     } catch {
       toast({ kind: "error", message: t("state.error") });
     } finally {
@@ -63,7 +62,7 @@ export default function OnboardingPage() {
           <h1 className="text-2xl font-black tracking-tight">One more step</h1>
           <p className="mt-1 text-sm text-white/60">Verify your shop to unlock listing.</p>
         </div>
-        <KycOnboarding onDone={() => router.push("/seller")} />
+        <KycOnboarding onDone={() => router.push(ROLE_HOME.seller)} />
       </main>
     );
   }

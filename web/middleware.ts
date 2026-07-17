@@ -4,9 +4,25 @@ import { NextRequest, NextResponse } from "next/server";
 // break the edge middleware bundle). Kept in sync with lib/session.ts SESSION_COOKIE.
 const SESSION_COOKIE = "asli_session";
 
-// /seller is listed separately even though /^\/sell/ already matches it by prefix — that overlap is
-// an accident, and renaming /sell would silently unprotect the whole seller portal.
-const AUTHED = [/^\/sell/, /^\/seller/, /^\/admin/, /^\/checkout/, /^\/orders/, /^\/onboarding/];
+// Paths that need a SESSION. Role is decided by the portal guards (lib/guards.ts), which can reach
+// the database; this list only keeps signed-out users out of the shell.
+//
+// /shop, /sell, /checkout and /orders are legacy paths that now 307 to their canonical homes
+// (next.config.mjs). They stay listed: the redirect fires first, but if one is ever removed we want
+// the gate to be what fails closed, not the routing table.
+//
+// The buyer storefront (/buyer/dashboard, /buyer/listings/*) is deliberately NOT here — a
+// marketplace is browsable signed-out, and the landing page links straight into it. Only the buyer's
+// own pages (checkout, orders, profile) require a session.
+const AUTHED = [
+  /^\/sell(?:$|\/)/,
+  /^\/seller(?:$|\/)/,
+  /^\/admin(?:$|\/)/,
+  /^\/buyer\/(?:checkout|orders|profile)(?:$|\/)/,
+  /^\/checkout(?:$|\/)/,
+  /^\/orders(?:$|\/)/,
+  /^\/onboarding(?:$|\/)/,
+];
 
 // Strictly-gated E2E/demo bypass — never active in production; requires the flag AND an explicit
 // x-test-role (header for Playwright, cookie for manual use). Mirrors lib/auth.ts getSessionUser.
@@ -61,21 +77,33 @@ async function sessionIsValid(token: string | undefined): Promise<boolean> {
   }
 }
 
+/**
+ * Pass the path down to server components.
+ *
+ * Layouts are not given the pathname, and the portal guards need it to build `?returnTo=`. We always
+ * `set` (never append) so a client-supplied `x-pathname` is overwritten rather than trusted.
+ */
+function withPathname(req: NextRequest): NextResponse {
+  const headers = new Headers(req.headers);
+  headers.set("x-pathname", req.nextUrl.pathname);
+  return NextResponse.next({ request: { headers } });
+}
+
 export async function middleware(req: NextRequest) {
   if (BYPASS && (req.headers.get("x-test-role") ?? req.cookies.get("x-test-role")?.value)) {
-    return NextResponse.next(); // authenticated by the test bypass
+    return withPathname(req); // authenticated by the test bypass
   }
 
   if (AUTHED.some((r) => r.test(req.nextUrl.pathname))) {
-    // Signature + expiry checked here; requireRole (node runtime) still re-checks per route and owns
-    // the role decision — this gate only keeps signed-out users out of the shell.
+    // Signature + expiry checked here; the portal guards (node runtime) still re-read the role from
+    // the database per request and own the role decision — this gate only keeps signed-out users out.
     if (!(await sessionIsValid(req.cookies.get(SESSION_COOKIE)?.value))) {
       const login = new URL("/login", req.url);
       login.searchParams.set("returnTo", req.nextUrl.pathname);
       return NextResponse.redirect(login);
     }
   }
-  return NextResponse.next();
+  return withPathname(req);
 }
 
 export const config = {

@@ -4,19 +4,25 @@
 import Link from "next/link";
 import { useT } from "@/lib/i18n";
 import { useSessionStore } from "@/lib/store";
+import { ROLE_HOME } from "@/lib/roles";
 import type { Role } from "@/lib/db/types";
 import type { I18nKey } from "@/lib/i18n/en";
 
-const target: Record<Role, { href: string; key: I18nKey }> = {
-  seller: { href: "/sell", key: "landing.cta.seller" },
-  buyer: { href: "/shop", key: "landing.cta.buyer" },
-  admin: { href: "/admin", key: "landing.cta.admin" },
+// Destination comes from ROLE_HOME (lib/roles.ts) — the same map the login redirect and the portal
+// guards use, so the CTA cannot drift to a route that bounces the user straight back.
+const ctaKey: Record<Role, I18nKey> = {
+  seller: "landing.cta.seller",
+  buyer: "landing.cta.buyer",
+  admin: "landing.cta.admin",
 };
 
 export function LandingCta() {
   const t = useT();
   const { status, user } = useSessionStore();
-  const dest = status === "authed" && user ? target[user.role] : { href: "/login", key: "landing.cta.signedout" as I18nKey };
+  const dest =
+    status === "authed" && user
+      ? { href: ROLE_HOME[user.role], key: ctaKey[user.role] }
+      : { href: "/login", key: "landing.cta.signedout" as I18nKey };
   return (
     <Link href={dest.href} className="btn-primary text-lg">
       {t(dest.key)} →

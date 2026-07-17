@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/Card";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { AgentMonitor } from "@/components/admin/AgentMonitor";
+import { PageHeader } from "@/components/nav/PageHeader";
 import type { AdminMetrics } from "@/app/api/admin/metrics/route";
 
 export default function AdminDashboard() {
@@ -41,6 +42,10 @@ export default function AdminDashboard() {
 
   return (
     <div className="space-y-6">
+      <PageHeader
+        title="Trust &amp; Safety"
+        subtitle="Prevention at the point of listing — complementary to Project Suraksha."
+      />
       {err ? (
         <Card className="p-6 text-center">
           <p role="alert" className="text-sm text-white/70">{err}</p>

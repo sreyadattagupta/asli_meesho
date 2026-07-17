@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Badge } from "@/components/ui/Badge";
 import { useToast } from "@/components/ui/Toast";
 import { ReviewDetailDrawer } from "@/components/admin/ReviewDetailDrawer";
+import { PageHeader } from "@/components/nav/PageHeader";
 import type { ReviewQueueItem } from "@/app/api/review/queue/route";
 
 export default function QueuePage() {
@@ -38,26 +39,39 @@ export default function QueuePage() {
     toast({ kind: "success", message: decision === "approved" ? "Listing approved — now live." : "Listing rejected." });
   };
 
+  // The header stays put across every state — loading, empty and error all still need to say which
+  // page you are on.
+  const header = (
+    <PageHeader
+      title="Review queue"
+      subtitle="Listings the orchestrator couldn't decide alone. Your call feeds the seller's trust score."
+    />
+  );
+
   if (forbidden) {
-    return <EmptyState icon={ShieldAlert} title="Admin access required" hint="Switch to the Admin persona from the header." />;
+    return <>{header}<EmptyState icon={ShieldAlert} title="Admin access required" hint="Switch to the Admin persona from the header." /></>;
   }
   if (err) {
     return (
-      <Card className="p-6 text-center">
-        <p role="alert" className="text-sm text-white/70">{err}</p>
-        <button onClick={load} className="btn-primary mt-3 px-5 py-2 text-sm">Retry</button>
-      </Card>
+      <>
+        {header}
+        <Card className="p-6 text-center">
+          <p role="alert" className="text-sm text-white/70">{err}</p>
+          <button onClick={load} className="btn-primary mt-3 px-5 py-2 text-sm">Retry</button>
+        </Card>
+      </>
     );
   }
   if (!items) {
-    return <div className="space-y-3">{Array.from({ length: 2 }).map((_, i) => <Skeleton key={i} className="h-28 w-full" />)}</div>;
+    return <>{header}<div className="space-y-3">{Array.from({ length: 2 }).map((_, i) => <Skeleton key={i} className="h-28 w-full" />)}</div></>;
   }
   if (items.length === 0) {
-    return <EmptyState icon={CheckCircle2} title="Queue clear" hint="No listings are waiting for human review right now." />;
+    return <>{header}<EmptyState icon={CheckCircle2} title="Queue clear" hint="No listings are waiting for human review right now." /></>;
   }
 
   return (
     <>
+      {header}
       <p className="mb-3 flex items-center gap-2 text-sm text-white/50">
         <Inbox className="h-4 w-4" aria-hidden /> {items.length} listing{items.length > 1 ? "s" : ""} awaiting review
       </p>
