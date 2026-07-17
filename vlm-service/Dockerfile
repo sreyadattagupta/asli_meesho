@@ -41,6 +41,17 @@ RUN python -c "from huggingface_hub import snapshot_download; snapshot_download(
     && rm -rf /tmp/onnx \
     && ls -la models/clip-vit-b32 models/dinov2-small
 
+# Agent-1 PRIMARY same-instance matcher (Track B) — DINOv2-small fine-tuned on DeepFashion, baked into
+# the image at the exact paths garment_embed.py / _garment_threshold read. Baked (not runtime-synced)
+# because HF_HUB_OFFLINE=1 below blocks runtime Hub access. model.onnx → models/garment-dinov2/;
+# the LEARNED bar (garment_calibration.json) → models/ so the same-item threshold stays data-driven.
+RUN python -c "from huggingface_hub import snapshot_download; snapshot_download('dsreya/garment-dinov2', local_dir='/tmp/garment')" \
+    && mkdir -p models/garment-dinov2 \
+    && cp /tmp/garment/model.onnx models/garment-dinov2/model.onnx \
+    && cp /tmp/garment/garment_calibration.json models/garment_calibration.json \
+    && rm -rf /tmp/garment \
+    && ls -la models/garment-dinov2 models/garment_calibration.json
+
 # Pre-download the torch HF models into the image cache at BUILD time so runtime cold-starts NEVER hit
 # the HF Hub (was causing slow starts + rate-limit 429s). HF_HUB_OFFLINE then loads them from the baked
 # cache — fast, deterministic, no network dependency to serve. HF_HOME pins the cache so the build

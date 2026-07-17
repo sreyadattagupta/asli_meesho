@@ -44,7 +44,13 @@ def _ensure_loaded() -> bool:
                 proc = AutoImageProcessor.from_pretrained(MODEL_ID)
             except Exception:  # noqa: BLE001 — torchvision missing → slow processor is equivalent here
                 proc = AutoImageProcessor.from_pretrained(MODEL_ID, use_fast=False)
-            model = AutoModel.from_pretrained(MODEL_ID).eval()
+            # low_cpu_mem_usage=False FORCES full weight materialisation on load. The default (True on
+            # recent transformers) inits on the `meta` device and lazily materialises — which, alongside
+            # the other baked models, left SigLIP tensors on `meta` and the forward raised
+            # "Tensor on device meta is not on the expected device cpu!" (seen in Cloud Run logs). Pin
+            # float32 + an explicit .to("cpu") so no parameter can remain on meta.
+            model = AutoModel.from_pretrained(
+                MODEL_ID, low_cpu_mem_usage=False, torch_dtype=torch.float32).eval().to("cpu")
             try:
                 torch.set_num_threads(max(1, os.cpu_count() or 1))
             except Exception:  # noqa: BLE001 — thread hint is best-effort
@@ -106,3 +112,110 @@ def embed(image_bytes: bytes) -> np.ndarray | None:
 def cosine(a: np.ndarray, b: np.ndarray) -> float:
     """Cosine similarity of two already-normalised embeddings."""
     return float(np.dot(a, b))
+
+
+# ----------------------------------------------------------------------------
+# Zero-shot COLOUR FAMILY (SigLIP text tower). Agent-1 colour-family guard.
+#
+# SigLIP's image cosine keys mostly on design/pattern/shape and is deliberately colour-tolerant, so a
+# same-design garment in a DIFFERENT primary colour (pink vs green) scores like a genuine match. To
+# catch "same design, wrong colour" we classify each garment's dominant CHROMATIC colour with the same
+# SigLIP model's text tower (zero-shot, sigmoid scoring). Robust to shade/lighting because it reasons
+# semantically ("is this green?"), not on raw pixels — light/dark/olive/mint all read as green.
+# ----------------------------------------------------------------------------
+
+_text_state: dict = {"loaded": False, "ok": False, "proc": None}
+
+# Prompt → PRIMARY family. Several shades per family so the zero-shot has room to land within a family.
+_COLOUR_PROMPTS: dict[str, str] = {
+    "a red garment": "red", "a maroon garment": "red", "a crimson garment": "red",
+    "a pink garment": "pink", "a rose pink garment": "pink", "a magenta garment": "pink",
+    "an orange garment": "orange", "a peach garment": "orange",
+    "a yellow garment": "yellow", "a mustard yellow garment": "yellow",
+    "a green garment": "green", "an olive green garment": "green", "a mint green garment": "green",
+    "a blue garment": "blue", "a navy blue garment": "blue", "a sky blue garment": "blue",
+    "a purple garment": "purple", "a lavender garment": "purple",
+    "a brown garment": "brown", "a beige garment": "brown", "a tan garment": "brown",
+    "a black garment": "black",
+    "a white garment": "white", "a cream garment": "white",
+    "a grey garment": "grey",
+}
+_CHROMATIC = {"red", "pink", "orange", "yellow", "green", "blue", "purple", "brown"}
+# Families that sit next to each other on the wheel — a shift between them is NOT a "clearly different
+# primary colour family" and must not trigger a rejection (the seller spec: pink↔red↔peach are fine).
+_ADJACENT: set[frozenset[str]] = {
+    frozenset(p) for p in [
+        ("red", "pink"), ("red", "orange"), ("red", "maroon"), ("pink", "purple"),
+        ("orange", "yellow"), ("orange", "brown"), ("yellow", "green"), ("yellow", "brown"),
+        ("green", "blue"), ("blue", "purple"), ("brown", "red"),
+    ]
+}
+
+
+def families_adjacent(a: str, b: str) -> bool:
+    """True if two primary families are the same or neighbours on the colour wheel (not a real diff)."""
+    return a == b or frozenset((a, b)) in _ADJACENT
+
+
+def _ensure_text() -> bool:
+    """Load the full SigLIP processor (image + text tokenizer) once, for zero-shot text scoring."""
+    if _text_state["loaded"]:
+        return _text_state["ok"]
+    with _lock:
+        if _text_state["loaded"]:
+            return _text_state["ok"]
+        try:
+            from transformers import AutoProcessor  # needs sentencepiece (in the image)
+
+            if not _ensure_loaded():
+                raise RuntimeError("SigLIP model not available")
+            _text_state["proc"] = AutoProcessor.from_pretrained(MODEL_ID)
+            _text_state["ok"] = True
+            log.info("SigLIP zero-shot colour classifier ready.")
+        except Exception as e:  # noqa: BLE001 — degrade to colour_sim-only, never crash
+            log.warning("SigLIP zero-shot unavailable (%s): %s — colour guard uses colour_sim only.",
+                        type(e).__name__, e)
+            _text_state["ok"] = False
+        _text_state["loaded"] = True
+    return _text_state["ok"]
+
+
+def colour_family(image_bytes: bytes) -> dict | None:
+    """Zero-shot dominant colour family of a garment crop.
+
+    Returns {family, prob, chromatic, chromatic_family, chromatic_prob} or None if unavailable.
+    `family` is the top label overall; `chromatic_family` is the strongest NON-neutral colour (what
+    matters for "same colour?" on a black/white garment with coloured accents).
+    """
+    if not _ensure_text():
+        return None
+    try:
+        import torch
+        from PIL import Image
+
+        img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        prompts = list(_COLOUR_PROMPTS.keys())
+        inp = _text_state["proc"](text=prompts, images=img, padding="max_length", return_tensors="pt")
+        with torch.no_grad():
+            out = _state["model"](**inp)
+        probs = torch.sigmoid(out.logits_per_image[0]).detach().cpu().numpy().astype("float32")
+
+        # Best prob per PRIMARY family (max over that family's shade prompts).
+        by_fam: dict[str, float] = {}
+        for i, prompt in enumerate(prompts):
+            fam = _COLOUR_PROMPTS[prompt]
+            by_fam[fam] = max(by_fam.get(fam, 0.0), float(probs[i]))
+
+        top_fam = max(by_fam, key=by_fam.get)
+        chrom = {f: p for f, p in by_fam.items() if f in _CHROMATIC}
+        chrom_fam = max(chrom, key=chrom.get) if chrom else None
+        return {
+            "family": top_fam,
+            "prob": round(by_fam[top_fam], 3),
+            "chromatic": top_fam in _CHROMATIC,
+            "chromatic_family": chrom_fam,
+            "chromatic_prob": round(chrom[chrom_fam], 3) if chrom_fam else 0.0,
+        }
+    except Exception as e:  # noqa: BLE001 — one bad classification must not fail the pipeline
+        log.warning("SigLIP colour_family failed (%s): %s", type(e).__name__, e)
+        return None

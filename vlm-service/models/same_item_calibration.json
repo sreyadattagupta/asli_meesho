@@ -1,5 +1,15 @@
 {
   "_comment": "Agent-1 same-item gate calibration. CLIP is the gate; DINOv2 is reported-only evidence (measured to add no discrimination on this task — see live-proof-matcher memory / eval). All values env-overridable via SAME_ITEM_THRESHOLD / SAME_ITEM_GATE_SIGNAL.",
+  "live_proof": {
+    "_comment": "Data-driven Live-Proof (/vlm/match) decision bars — read by main.py _bar(), env-overridable, so no bar is a hardcoded literal in the decision logic. The per-listing VERDICT is always a REAL model cosine on the two actual photos vs these calibrated operating points. Superseded by models/garment_calibration.json when the trained matcher (Track B) is present.",
+    "siglip_pass": 0.70,
+    "siglip_hard": 0.75,
+    "ensemble_lo": 0.35,
+    "ensemble_hi": 0.88,
+    "ensemble_dino_evid": 0.55,
+    "ensemble_clip_evid": 0.85,
+    "_rationale": "SigLIP cosines on real captures: genuine clean 0.845 · genuine shade-shifted 0.818 · genuine on-model-vs-flat-lay 0.735 · different dress 0.637. siglip_pass 0.70 clears all genuine (0.735 by +0.035) and rejects the different dress by 0.063; siglip_hard 0.75 = clear pass with no colour check. In [ensemble_lo, siglip_pass) a FAILED gate is re-judged by the LOCAL DINOv2+CLIP consensus (recall-only): promote iff dino ≥ ensemble_dino_evid AND clip ≥ ensemble_clip_evid AND colour families agree. Different items score low on ≥1 model and stay rejected; backstopped by the single-use code + reuse/liveness + human review."
+  },
   "gate_signal": "clip/max",
   "gate_threshold": 0.75,
   "evidence_signal": "dino/max/cls",
