@@ -4,7 +4,8 @@
 // Items come from lib/nav.ts — this component renders whatever the config says and knows nothing
 // about which portal it is in.
 import Link from "next/link";
-import { NAV, isActive } from "@/lib/nav";
+import { NAV, isActive, navMessagesFor } from "@/lib/nav";
+import { useNavLoadingStore } from "@/lib/store";
 import type { Role } from "@/lib/db/types";
 
 export function SidebarNav({
@@ -17,6 +18,8 @@ export function SidebarNav({
   /** Mobile drawer closes on tap; the desktop rail passes nothing. */
   onNavigate?: () => void;
 }) {
+  const startNavLoading = useNavLoadingStore((s) => s.start);
+
   return (
     <nav aria-label={`${role} navigation`} className="flex flex-col gap-0.5">
       {NAV[role].map((item) => {
@@ -26,7 +29,12 @@ export function SidebarNav({
           <Link
             key={item.href}
             href={item.href}
-            onClick={onNavigate}
+            onClick={() => {
+              // Same-page clicks navigate nowhere, so starting the overlay would leave it stuck
+              // with no pathname change to clear it.
+              if (!active) startNavLoading(navMessagesFor(item));
+              onNavigate?.();
+            }}
             aria-current={active ? "page" : undefined}
             className={[
               "flex min-h-[44px] items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition",

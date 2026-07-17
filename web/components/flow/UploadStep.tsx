@@ -4,7 +4,9 @@ import { useRef, useState } from "react";
 import { useSellerStore } from "@/lib/store";
 import { useT } from "@/lib/i18n";
 import { useVoiceGuide } from "@/lib/useVoiceGuide";
+import { REVERSE_IMAGE_MESSAGES } from "@/lib/loadingMessages";
 import { PhotoCamera } from "@/components/ui/PhotoCamera";
+import { LoadingOverlay } from "@/components/ui/LoadingOverlay";
 import { WizardNav } from "./WizardNav";
 
 // Step 1 — catalog upload. Gallery upload is FINE here (invariant #2 only bans it
@@ -82,7 +84,17 @@ export default function UploadStep() {
   }
 
   return (
-    <div className="card p-6">
+    <div className="card relative p-6">
+      {busy && (
+        <LoadingOverlay
+          variant="inline"
+          messages={REVERSE_IMAGE_MESSAGES}
+          expectedMs={20000}
+          done={!busy}
+          label="Checking your photo…"
+        />
+      )}
+
       <h2 className="text-2xl font-bold">{t("flow.upload.title")}</h2>
       <p className="mt-1 text-sm text-white/50">{t("flow.upload.subtitle")}</p>
 

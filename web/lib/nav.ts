@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { ROLE_HOME } from "./roles";
 import type { Role } from "./db/types";
+import { GENERIC_NAV_MESSAGES } from "./loadingMessages";
 
 export interface NavItem {
   href: string;
@@ -15,35 +16,88 @@ export interface NavItem {
   icon: LucideIcon;
   /** Highlight only on an exact path match. Index pages need it or every child lights them up. */
   exact?: boolean;
+  /** Tailored copy for the nav-loading overlay (components/nav/NavLoadingController.tsx). Falls
+   *  back to GENERIC_NAV_MESSAGES via `navMessagesFor` when absent. */
+  loadingMessages?: string[];
 }
 
 export const NAV: Record<Role, NavItem[]> = {
   seller: [
-    { href: "/seller/dashboard", label: "Dashboard", icon: LayoutDashboard, exact: true },
-    { href: "/seller/listings", label: "My Listings", icon: Package },
-    { href: "/seller/create-listing", label: "Create Listing", icon: PackagePlus },
-    { href: "/seller/orders", label: "Orders", icon: Receipt },
-    { href: "/seller/analytics", label: "Analytics", icon: BarChart3 },
-    { href: "/seller/messages", label: "Messages", icon: MessageSquare },
-    { href: "/seller/profile", label: "Profile", icon: User },
-    { href: "/seller/settings", label: "Settings", icon: Settings },
+    {
+      href: "/seller/dashboard", label: "Dashboard", icon: LayoutDashboard, exact: true,
+      loadingMessages: ["Rounding up today's numbers…", "Straightening the welcome mat…", "Polishing your dashboard…"],
+    },
+    {
+      href: "/seller/listings", label: "My Listings", icon: Package,
+      loadingMessages: ["Lining your listings up on the shelf…", "Counting your catalogue…", "Fluffing the display pillows…"],
+    },
+    {
+      href: "/seller/create-listing", label: "Create Listing", icon: PackagePlus,
+      loadingMessages: ["Rolling out the red carpet for a new listing…", "Warming up the camera…", "Clearing a spot on the shelf…"],
+    },
+    {
+      href: "/seller/orders", label: "Orders", icon: Receipt,
+      loadingMessages: ["Chasing down your parcels…", "Sorting the delivery pile…", "Following the courier trail…"],
+    },
+    {
+      href: "/seller/analytics", label: "Analytics", icon: BarChart3,
+      loadingMessages: ["Crunching your numbers…", "Drawing the pretty charts…", "Doing the math so you don't have to…"],
+    },
+    {
+      href: "/seller/messages", label: "Messages", icon: MessageSquare,
+      loadingMessages: ["Fetching your inbox…", "Checking who slid into your DMs…", "Sorting the fan mail…"],
+    },
+    {
+      href: "/seller/profile", label: "Profile", icon: User,
+      loadingMessages: ["Dusting off your profile…", "Finding your good side…"],
+    },
+    {
+      href: "/seller/settings", label: "Settings", icon: Settings,
+      loadingMessages: ["Finding all the knobs and switches…", "Oiling the hinges…"],
+    },
   ],
   buyer: [
-    { href: "/buyer/dashboard", label: "Shop", icon: Store, exact: true },
-    { href: "/buyer/orders", label: "My Orders", icon: Receipt },
-    { href: "/buyer/profile", label: "Profile", icon: User },
+    {
+      href: "/buyer/dashboard", label: "Shop", icon: Store, exact: true,
+      loadingMessages: ["Wheeling out the shopping cart…", "Restocking the shelves…", "Rearranging the storefront…"],
+    },
+    {
+      href: "/buyer/orders", label: "My Orders", icon: Receipt,
+      loadingMessages: ["Tracking down your treasures…", "Peeking inside the delivery van…"],
+    },
+    {
+      href: "/buyer/profile", label: "Profile", icon: User,
+      loadingMessages: ["Dusting off your profile…", "Finding your good side…"],
+    },
   ],
   admin: [
-    { href: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard, exact: true },
-    { href: "/admin/review", label: "Review Queue", icon: ShieldCheck },
-    { href: "/admin/users", label: "Users", icon: Users },
-    { href: "/admin/reports", label: "Reports", icon: FileBarChart },
+    {
+      href: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard, exact: true,
+      loadingMessages: ["Rounding up the metrics…", "Booting up mission control…"],
+    },
+    {
+      href: "/admin/review", label: "Review Queue", icon: ShieldCheck,
+      loadingMessages: ["Stacking up the review pile…", "Sharpening the red pen…"],
+    },
+    {
+      href: "/admin/users", label: "Users", icon: Users,
+      loadingMessages: ["Rounding up the crowd…", "Taking attendance…"],
+    },
+    {
+      href: "/admin/reports", label: "Reports", icon: FileBarChart,
+      loadingMessages: ["Compiling the paperwork…", "Stapling the reports together…"],
+    },
   ],
 };
 
 /** Is `item` the page currently open? */
 export function isActive(path: string, item: NavItem): boolean {
   return item.exact ? path === item.href : path === item.href || path.startsWith(`${item.href}/`);
+}
+
+/** Loading-overlay copy for a nav item — its own tailored lines, or the generic fallback. */
+export function navMessagesFor(item: NavItem): string[] {
+  return item.loadingMessages ?? GENERIC_NAV_MESSAGES;
 }
 
 // Segment → crumb label for paths the NAV list doesn't cover (detail pages, wizard steps).

@@ -153,6 +153,28 @@ export const useUiStore = create<UiStore>()(
   ),
 );
 
+// ---- nav-loading slice (NOT persisted — transient UI state) --------------
+//
+// Decouples the click source (SidebarNav) from the renderer (NavLoadingController): a nav click
+// calls `start` before the Link navigates; the controller watches `active` and clears it once the
+// route has actually changed and a minimum dwell has elapsed.
+
+interface NavLoadingStore {
+  active: boolean;
+  messages: string[];
+  startedAt: number;
+  start: (messages: string[]) => void;
+  stop: () => void;
+}
+
+export const useNavLoadingStore = create<NavLoadingStore>((set) => ({
+  active: false,
+  messages: [],
+  startedAt: 0,
+  start: (messages) => set({ active: true, messages, startedAt: Date.now() }),
+  stop: () => set({ active: false }),
+}));
+
 // ---- session slice (hydrated from /api/users/me on mount) ----------------
 
 export interface SessionUser {
