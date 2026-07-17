@@ -2,7 +2,7 @@
 import type {
   User, Role, Seller, Listing, ListingStatus, ProductImage, ImageMeta, Challenge,
   AuthenticityCheck, SizeMeasurement, Order, PromiseRecord, TrustEvent,
-  Review, AuditEntry,
+  Review, AuditEntry, Message,
 } from "./types";
 
 export interface Repo {
@@ -64,4 +64,15 @@ export interface Repo {
   decideReview(id: string, status: "approved" | "rejected", note: string, reviewerUserId: string): Promise<Review>;
   appendAudit(a: Omit<AuditEntry, "id" | "createdAt">): Promise<AuditEntry>;
   listAudit(listingId: string): Promise<AuditEntry[]>;
+  // messages (order-scoped buyer↔seller threads)
+  addMessage(m: Omit<Message, "id" | "createdAt">): Promise<Message>;
+  /** One thread, oldest → newest. */
+  listMessages(orderId: string): Promise<Message[]>;
+  /**
+   * Every message on the given orders. One call, not one per order: an inbox with N threads would
+   * otherwise fan out into N queries, and the seller's inbox is exactly that shape.
+   */
+  listMessagesForOrders(orderIds: string[]): Promise<Message[]>;
+  /** Mark the OTHER party's messages in a thread as read. Returns how many changed. */
+  markThreadRead(orderId: string, readerUserId: string): Promise<number>;
 }

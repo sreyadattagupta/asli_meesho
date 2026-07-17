@@ -5,7 +5,7 @@ import type { Repo } from "./repo";
 import type {
   User, Role, Seller, Listing, ListingStatus, ProductImage, ImageMeta, Challenge,
   AuthenticityCheck, SizeMeasurement, Order, PromiseRecord, TrustEvent,
-  Review, AuditEntry,
+  Review, AuditEntry, Message,
 } from "./types";
 
 type Row = Record<string, unknown>;
@@ -62,10 +62,16 @@ const sellerToDb = (s: Partial<Seller>): Row => {
 const listingFromDb = (r: Row): Listing => ({
   id: r.id as string, sellerId: r.seller_id as string, title: r.title as string,
   description: r.description as string, price: Number(r.price),
+  // Nullable columns stay undefined rather than becoming 0 — `stock: null` means "not tracked",
+  // and Number(null) === 0 would silently render every legacy listing as sold out.
+  mrp: r.mrp == null ? undefined : Number(r.mrp),
   category: r.category as string, status: r.status as ListingStatus,
   flowStep: r.flow_step as string, verified: Boolean(r.verified),
   sizeChart: (r.size_chart as Record<string, number> | null) ?? undefined,
-  rankBoost: Number(r.rank_boost), createdAt: r.created_at as string,
+  rankBoost: Number(r.rank_boost),
+  stock: r.stock == null ? undefined : Number(r.stock),
+  sku: (r.sku as string | null) ?? undefined,
+  createdAt: r.created_at as string,
 });
 
 const listingToDb = (l: Partial<Listing>): Row => {
@@ -80,6 +86,9 @@ const listingToDb = (l: Partial<Listing>): Row => {
   if (l.verified !== undefined) r.verified = l.verified;
   if (l.sizeChart !== undefined) r.size_chart = l.sizeChart;
   if (l.rankBoost !== undefined) r.rank_boost = l.rankBoost;
+  if (l.mrp !== undefined) r.mrp = l.mrp;
+  if (l.stock !== undefined) r.stock = l.stock;
+  if (l.sku !== undefined) r.sku = l.sku;
   return r;
 };
 
@@ -150,6 +159,13 @@ const auditFromDb = (r: Row): AuditEntry => ({
   actor: r.actor as string, event: r.event as string,
   data: (r.data as Record<string, unknown>) ?? {},
   createdAt: r.created_at as string,
+});
+
+const messageFromDb = (r: Row): Message => ({
+  id: r.id as string, orderId: r.order_id as string, listingId: r.listing_id as string,
+  fromUserId: r.from_user_id as string, body: r.body as string,
+  createdAt: r.created_at as string,
+  readAt: (r.read_at as string | null) ?? undefined,
 });
 
 // ---- repo ---------------------------------------------------------------
@@ -432,5 +448,35 @@ export class SupabaseRepo implements Repo {
     return this.many(
       this.sb.from("audit_log").select().eq("listing_id", listingId).order("id"),
       auditFromDb);
+  }
+
+  // messages
+  addMessage(m: Omit<Message, "id" | "createdAt">) {
+    return this.one(this.sb.from("messages").insert({
+      order_id: m.orderId, listing_id: m.listingId, from_user_id: m.fromUserId,
+      body: m.body, read_at: m.readAt ?? null,
+    }).select().single(), messageFromDb);
+  }
+  listMessages(orderId: string) {
+    return this.many(
+      this.sb.from("messages").select().eq("order_id", orderId).order("created_at"),
+      messageFromDb);
+  }
+  async listMessagesForOrders(orderIds: string[]) {
+    // `.in()` with an empty array is a query that can only return nothing — skip the round trip.
+    if (orderIds.length === 0) return [];
+    return this.many(
+      this.sb.from("messages").select().in("order_id", orderIds).order("created_at"),
+      messageFromDb);
+  }
+  async markThreadRead(orderId: string, readerUserId: string): Promise<number> {
+    // `neq(from_user_id)` + `is(read_at, null)`: only the OTHER party's unread messages, matching
+    // the InMemory guard. Re-marking already-read rows would churn read_at on every page view.
+    const { data, error } = await this.sb.from("messages")
+      .update({ read_at: new Date().toISOString() })
+      .eq("order_id", orderId).neq("from_user_id", readerUserId).is("read_at", null)
+      .select("id");
+    if (error) throw new Error(error.message);
+    return (data ?? []).length;
   }
 }

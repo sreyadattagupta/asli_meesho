@@ -3,7 +3,7 @@ import type { Repo } from "./repo";
 import type {
   User, Role, Seller, Listing, ListingStatus, ProductImage, ImageMeta, Challenge,
   AuthenticityCheck, SizeMeasurement, Order, PromiseRecord, TrustEvent,
-  Review, AuditEntry,
+  Review, AuditEntry, Message,
 } from "./types";
 
 /** Shared id generator — SupabaseRepo mappers reuse it for client-side ids. */
@@ -23,6 +23,7 @@ export class InMemoryRepo implements Repo {
   private trustEvents = new Map<string, TrustEvent>();
   private reviews = new Map<string, Review>();
   private audit: AuditEntry[] = [];
+  private messages = new Map<string, Message>();
 
   // ---- users ----
   async getUserByAuth0Sub(sub: string): Promise<User | null> {
@@ -220,5 +221,32 @@ export class InMemoryRepo implements Repo {
   }
   async listAudit(listingId: string): Promise<AuditEntry[]> {
     return this.audit.filter(a => a.listingId === listingId);
+  }
+  // ---- messages ----
+  async addMessage(m: Omit<Message, "id" | "createdAt">): Promise<Message> {
+    const msg: Message = { ...m, id: newId(), createdAt: now() };
+    this.messages.set(msg.id, msg);
+    return msg;
+  }
+  async listMessages(orderId: string): Promise<Message[]> {
+    return [...this.messages.values()]
+      .filter(m => m.orderId === orderId)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+  async listMessagesForOrders(orderIds: string[]): Promise<Message[]> {
+    const ids = new Set(orderIds);
+    return [...this.messages.values()]
+      .filter(m => ids.has(m.orderId))
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+  async markThreadRead(orderId: string, readerUserId: string): Promise<number> {
+    let changed = 0;
+    for (const m of this.messages.values()) {
+      // Only the OTHER party's messages: reading your own sent message is not an event.
+      if (m.orderId !== orderId || m.fromUserId === readerUserId || m.readAt) continue;
+      this.messages.set(m.id, { ...m, readAt: now() });
+      changed++;
+    }
+    return changed;
   }
 }
