@@ -210,7 +210,7 @@ export function ArchitectureSection() {
                     ↓
   UNIFIED DECISION ENGINE → trust score, explainable + logged
                     ↓
-  ✓ Published → /shop      ✎ Retry      Human review → /admin`}</pre>
+  ✓ Published → /buyer      ✎ Retry      Human review → /admin`}</pre>
         </div>
       </Reveal>
     </section>

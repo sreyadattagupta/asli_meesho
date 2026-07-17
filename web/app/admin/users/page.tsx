@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Badge } from "@/components/ui/Badge";
 import { useToast } from "@/components/ui/Toast";
+import { PageHeader } from "@/components/nav/PageHeader";
 import type { Role, User } from "@/lib/db/types";
 
 const ROLES: Role[] = ["seller", "buyer", "admin"];
@@ -56,6 +57,7 @@ export default function UsersPage() {
 
   return (
     <div className="space-y-4">
+      <PageHeader title="Users" subtitle="Who has access, and as what." />
       <p className="flex items-start gap-2 text-xs text-white/50">
         <Badge variant="neutral">demo provision</Badge>
         In production, Admin is invite-only and Seller requires KYC. Here roles are switchable for the demo.

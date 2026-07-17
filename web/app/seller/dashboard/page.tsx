@@ -1,19 +1,18 @@
-// Seller dashboard — every figure computed from this seller's own rows (features/seller/overview.ts).
+// Seller dashboard — the landing page for every authenticated seller (spec §2). Every figure is
+// computed from this seller's own rows (features/seller/overview.ts).
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { getSessionUser } from "@/lib/auth";
+import { requireSeller } from "@/lib/guards";
 import { repoReady } from "@/lib/db";
 import { buildOverview } from "@/features/seller/overview";
 import { RevenueChart } from "@/features/seller/RevenueChart";
 import { StatTile } from "@/components/ui/StatTile";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { PageHeader } from "@/components/nav/PageHeader";
 import { PackagePlus } from "lucide-react";
 
 export default async function SellerDashboard() {
-  const user = await getSessionUser();
-  if (!user) redirect("/login?returnTo=/seller");
-  if (user.role !== "seller") redirect("/login");
-  if (!user.sellerId) redirect("/onboarding");
+  const user = await requireSeller();
 
   const repo = await repoReady();
   const seller = await repo.getSeller(user.sellerId);
@@ -32,6 +31,15 @@ export default async function SellerDashboard() {
 
   return (
     <div className="space-y-4">
+      <PageHeader
+        title={`Welcome back, ${seller.shopName}`}
+        subtitle="Your listings, your numbers, your trust record."
+        action={
+          <Link href="/seller/create-listing" className="btn-primary">
+            Create listing →
+          </Link>
+        }
+      />
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="card p-4"><StatTile label="Listings" value={o.listings.total} /></div>
         <div className="card p-4"><StatTile label="Active" value={o.listings.active} /></div>
@@ -81,7 +89,7 @@ export default async function SellerDashboard() {
           icon={PackagePlus}
           title="No listings yet"
           hint="Your first listing goes through possession proof and auto-sizing — about two minutes."
-          action={<Link href="/sell" className="btn-primary">Create your first listing →</Link>}
+          action={<Link href="/seller/create-listing" className="btn-primary">Create your first listing →</Link>}
         />
       )}
     </div>

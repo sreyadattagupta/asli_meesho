@@ -37,7 +37,7 @@ export default function Seller360Page({ params }: { params: Promise<{ id: string
 
   return (
     <div className="space-y-4">
-      <Link href="/admin/queue" className="inline-flex min-h-[44px] items-center gap-1.5 text-sm text-white/50 hover:text-white/80">
+      <Link href="/admin/review" className="inline-flex min-h-[44px] items-center gap-1.5 text-sm text-white/50 hover:text-white/80">
         <ArrowLeft className="h-4 w-4" aria-hidden /> Back
       </Link>
 

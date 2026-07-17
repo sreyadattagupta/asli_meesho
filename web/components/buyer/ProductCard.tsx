@@ -7,7 +7,7 @@ import type { FeedItem } from "@/lib/feed";
 export function ProductCard({ item }: { item: FeedItem }) {
   return (
     <Link
-      href={`/shop/${item.id}`}
+      href={`/buyer/listings/${item.id}`}
       className="buyer-card group block overflow-hidden transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-meesho-pink"
     >
       <div className="relative aspect-square overflow-hidden bg-zinc-50">

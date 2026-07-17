@@ -1,9 +1,10 @@
 // Seller business profile — the details a real marketplace collects, plus the read-only trust and
 // KYC state the agents and reviewers own.
 import { redirect } from "next/navigation";
-import { getSessionUser } from "@/lib/auth";
+import { requireSeller } from "@/lib/guards";
 import { repoReady } from "@/lib/db";
 import { ProfileForm } from "@/features/seller/ProfileForm";
+import { PageHeader } from "@/components/nav/PageHeader";
 
 const KYC_STYLE: Record<string, string> = {
   verified: "bg-asli-green/10 text-asli-green ring-asli-green/25",
@@ -12,10 +13,7 @@ const KYC_STYLE: Record<string, string> = {
 };
 
 export default async function SellerProfile() {
-  const user = await getSessionUser();
-  if (!user) redirect("/login?returnTo=/seller/profile");
-  if (user.role !== "seller") redirect("/login");
-  if (!user.sellerId) redirect("/onboarding");
+  const user = await requireSeller();
 
   const repo = await repoReady();
   const seller = await repo.getSeller(user.sellerId);
@@ -23,6 +21,7 @@ export default async function SellerProfile() {
 
   return (
     <div className="space-y-4">
+      <PageHeader title="Profile" subtitle="Your shop details, and the trust record the agents keep on you." />
       <section className="card p-5">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <div>

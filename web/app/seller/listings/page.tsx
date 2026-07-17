@@ -1,17 +1,15 @@
-// Seller product management — this seller's listings only, straight from the repo.
-import { redirect } from "next/navigation";
+// Seller listing management — this seller's listings only, straight from the repo.
 import Link from "next/link";
 import { PackagePlus } from "lucide-react";
-import { getSessionUser } from "@/lib/auth";
+import { requireSeller } from "@/lib/guards";
 import { repoReady } from "@/lib/db";
 import { ProductRow } from "@/features/seller/ProductRow";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { PageHeader } from "@/components/nav/PageHeader";
 
-export default async function SellerProducts() {
-  const user = await getSessionUser();
-  if (!user) redirect("/login?returnTo=/seller/products");
-  if (user.role !== "seller") redirect("/login");
-  if (!user.sellerId) redirect("/onboarding");
+export default async function SellerListings() {
+  // Role + onboarding are settled by the layout's guard; this re-reads the user for its sellerId.
+  const user = await requireSeller();
 
   const repo = await repoReady();
   // Scoped by the session's sellerId — a seller cannot list another shop's products.
@@ -24,13 +22,23 @@ export default async function SellerProducts() {
   ]);
 
   return (
-    <div className="card overflow-x-auto p-1">
+    <>
+      <PageHeader
+        title="My Listings"
+        subtitle="Every listing you've put through possession proof and auto-sizing."
+        action={
+          <Link href="/seller/create-listing" className="btn-primary">
+            Create listing →
+          </Link>
+        }
+      />
+      <div className="card overflow-x-auto p-1">
       {listings.length === 0 ? (
         <EmptyState
           icon={PackagePlus}
-          title="No products yet"
+          title="No listings yet"
           hint="Every listing starts with possession proof and an auto-measured size chart."
-          action={<Link href="/sell" className="btn-primary">Create listing →</Link>}
+          action={<Link href="/seller/create-listing" className="btn-primary">Create listing →</Link>}
         />
       ) : (
         <table className="w-full min-w-[46rem] text-left text-sm">
@@ -60,6 +68,7 @@ export default async function SellerProducts() {
           </tbody>
         </table>
       )}
-    </div>
+      </div>
+    </>
   );
 }
