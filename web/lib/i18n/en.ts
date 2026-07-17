@@ -114,8 +114,8 @@ export const en = {
   "flow.sizing.chooseMethod": "How do you want to add the photo?",
   "flow.sizing.optionUpload": "Upload Image",
   "flow.sizing.optionUploadHint": "Add one or more garment photos (A4 sheet in frame for scale).",
-  "flow.sizing.optionCapture": "Capture & Upload",
-  "flow.sizing.optionCaptureHint": "Open the camera with an A4 guide — capture auto-sends for measurement.",
+  "flow.sizing.optionCapture": "Take a photo",
+  "flow.sizing.optionCaptureHint": "Lay the garment flat on the A4 sheet and snap a photo — it's measured automatically.",
   // Measurement is deterministic CV (A4 homography → cm) in vlm-service; the Hugging Face model
   // classifies the garment TYPE. Don't credit the measurement to an engine that didn't do it.
   "flow.sizing.inferenceLabel": "Measured by A4-referenced computer vision · garment type by a Hugging Face model",

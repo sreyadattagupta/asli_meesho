@@ -13,7 +13,7 @@ import { toSizeChart } from "@/lib/sizing";
 import type { SizeChart } from "@/lib/sizing";
 import { gradeChart, GRADE_SIZES, type GradeDim, type GeneratedChart } from "@/lib/grading";
 import { exportChartJSON, exportChartCSV, exportChartPDF } from "@/lib/chartExport";
-import GuidedSizingCamera from "./GuidedSizingCamera";
+import { PhotoCamera } from "@/components/ui/PhotoCamera";
 
 // The declared-size selector offers the graded size ladder (XS–4XL), minus the non-apparel "Free Size".
 const DECLARE_SIZES = GRADE_SIZES;
@@ -70,8 +70,12 @@ export default function SizingStep() {
     addFlatlays([new File([blob], "flatlay_real.jpg", { type: "image/jpeg" })]);
   }
 
-  // Guided scan produced a validated frame → add it and measure immediately.
-  function onScanCapture(file: File) {
+  // A photo was taken → add it and measure immediately. No client-side A4 gate: the seller frames the
+  // garment on the A4 and shoots freely, and the reliable server-side homography (detect.py) does the
+  // A4 detection + measurement. The old guided scanner disabled the shutter until its own live A4
+  // detection passed, which real cameras/lighting couldn't satisfy — so capture was impossible in
+  // production even though the server could measure the photo fine.
+  function onPhotoCapture(file: File) {
     addFlatlays([file]);
     setScanning(false);
     void measure();
@@ -148,7 +152,13 @@ export default function SizingStep() {
 
   return (
     <div className="card p-6">
-      {scanning && <GuidedSizingCamera onCapture={onScanCapture} onClose={() => setScanning(false)} />}
+      {scanning && (
+        <PhotoCamera
+          onCapture={onPhotoCapture}
+          onClose={() => setScanning(false)}
+          fallbackLabel={t("flow.sizing.optionUpload")}
+        />
+      )}
       <span className="pill bg-asli-green/15 text-asli-green ring-1 ring-asli-green/30">
         {t("flow.sizing.pill")}
       </span>
@@ -254,18 +264,10 @@ export default function SizingStep() {
             </div>
             <p className="mt-1 text-[11px] text-white/35">{t("flow.sizing.declareHint")}</p>
           </div>
-          {/* Two input options: upload from device, or capture live with the A4 guide overlay. */}
+          {/* Two input options: take a photo, or upload from the gallery. Both just need the garment
+              flat on the A4 in frame — the server measures it. No live/guided A4 gate blocks capture. */}
           <p className="text-xs font-medium text-white/60">{t("flow.sizing.chooseMethod")}</p>
           <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => inputRef.current?.click()}
-              className="flex flex-col items-start gap-1 rounded-xl border border-white/10 bg-white/[0.03] p-3 text-left transition hover:border-asli-violet/50 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-asli-violet"
-            >
-              <Upload className="h-5 w-5 text-asli-violet" aria-hidden />
-              <span className="text-sm font-semibold">{t("flow.sizing.optionUpload")}</span>
-              <span className="text-[11px] leading-tight text-white/40">{t("flow.sizing.optionUploadHint")}</span>
-            </button>
             <button
               type="button"
               onClick={() => setScanning(true)}
@@ -274,6 +276,15 @@ export default function SizingStep() {
               <Camera className="h-5 w-5 text-asli-green" aria-hidden />
               <span className="text-sm font-semibold">{t("flow.sizing.optionCapture")}</span>
               <span className="text-[11px] leading-tight text-white/40">{t("flow.sizing.optionCaptureHint")}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => inputRef.current?.click()}
+              className="flex flex-col items-start gap-1 rounded-xl border border-white/10 bg-white/[0.03] p-3 text-left transition hover:border-asli-violet/50 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-asli-violet"
+            >
+              <Upload className="h-5 w-5 text-asli-violet" aria-hidden />
+              <span className="text-sm font-semibold">{t("flow.sizing.optionUpload")}</span>
+              <span className="text-[11px] leading-tight text-white/40">{t("flow.sizing.optionUploadHint")}</span>
             </button>
           </div>
           <p className="flex items-center gap-1 text-[10px] text-white/30">
