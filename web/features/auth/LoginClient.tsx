@@ -15,6 +15,7 @@ import { Card } from "@/components/ui/Card";
 import { useT } from "@/lib/i18n";
 import { useSessionStore } from "@/lib/store";
 import { fadeSlideUp } from "@/lib/motion";
+import { ROLE_HOME, ROLE_LABEL, safeReturnTo } from "@/lib/roles";
 import type { Role } from "@/lib/db/types";
 
 const PORTALS = [
@@ -25,9 +26,6 @@ const PORTALS = [
 
 // Public create-account may only pick non-privileged roles (admin is provisioned admin-side / dev-only).
 const REGISTER_ROLES: readonly Role[] = ["seller", "buyer"];
-
-const ROLE_HOME: Record<Role, string> = { seller: "/seller", buyer: "/shop", admin: "/admin" };
-const ROLE_LABEL: Record<Role, string> = { seller: "seller portal", buyer: "marketplace", admin: "admin console" };
 
 const inputCls =
   "min-h-[44px] flex-1 bg-transparent text-white outline-none placeholder:text-white/30";
@@ -82,8 +80,11 @@ export function LoginClient({ devLogin = false }: { devLogin?: boolean }) {
       // offering "Sign in" to a signed-in user. router.refresh() only re-renders server components;
       // it cannot repopulate this client store.
       await useSessionStore.getState().fetchSession();
-      const dest = returnTo() ?? ROLE_HOME[actual];
-      router.push(dest);
+      // safeReturnTo, not `returnTo() ?? ROLE_HOME[actual]`: a raw returnTo is both an open-redirect
+      // vector ("//evil.com") and a way to strand someone on a portal their role can't open — the
+      // guard would bounce them right back here. Anything unusable falls back to the account's home,
+      // which for a seller is always the seller dashboard.
+      router.push(safeReturnTo(returnTo(), actual));
       router.refresh();
     } catch { setErr("Network hiccup — retry."); } finally { setBusy(false); }
   }
