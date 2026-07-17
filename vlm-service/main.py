@@ -179,9 +179,20 @@ REUSE_PHASH = float(os.getenv("REUSE_PHASH", "0.92"))
 # Recall-only: the VLM never vetoes a CLIP pass — fraud stays gated by CLIP<LO, code, reuse, review.
 SAME_ITEM_VLM_LO = float(os.getenv("SAME_ITEM_VLM_LO", "0.55"))
 SAME_ITEM_VLM_HI = float(os.getenv("SAME_ITEM_VLM_HI", "0.88"))
-# SigLIP same-product cosine PASS bar (Live Proof primary gate). Seller spec starts at 0.82; tune on
-# real cosines from the deployed endpoint. At/above ⇒ same product (PASS); below ⇒ retry (never block).
-SIGLIP_THRESHOLD = float(os.getenv("SIGLIP_THRESHOLD", "0.82"))
+# SigLIP same-product cosine PASS bar (Live Proof primary gate). At/above ⇒ same product (PASS);
+# below ⇒ retry (never block).
+#
+# Calibrated to 0.75 on the deployed model's REAL cosines, not the spec's initial 0.82. Measured on
+# the committed fixtures:
+#   genuine clean re-capture        0.845
+#   genuine, shade/lighting shifted 0.818   ← a different phone / white balance, still the same kurti
+#   a different dress               0.637
+# 0.82 sat ABOVE the genuine-varied score, so an honest photo taken on another phone was rejected
+# ("Product mismatch, retake") — the reported production bug. 0.75 clears both genuine cases with
+# margin and rejects the different product by 0.11. Look-alikes (same category+colour, different item)
+# are beyond any single embedding by design and stay backstopped by the single-use code + human
+# review, so the recall-leaning bar is the right trade. Env-overridable for future re-calibration.
+SIGLIP_THRESHOLD = float(os.getenv("SIGLIP_THRESHOLD", "0.75"))
 
 
 async def _read(upload: UploadFile, field: str) -> bytes:
