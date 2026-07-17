@@ -185,15 +185,25 @@ export const useSessionStore = create<SessionStore>((set) => ({
 // Priced near Meesho's typical AOV (~₹480 [S10]) so the Pricing step opens on a plausible number
 // rather than a zero the seller has to clear. `stock: 1` matches the reseller who lists what they
 // physically hold — which is the whole premise of the possession proof.
-const initialDraft = {
+const initialDraft: SellerDraft = {
   title: "",
   description: "",
   price: 349,
   mrp: 0,
-  category: "kurtis" as const,
+  category: "kurtis",
   stock: 1,
   sku: "",
 };
+
+/**
+ * A complete draft, no matter what shape came in. Used by the persist `merge` (to heal an older
+ * localStorage shape) and by `reset`. Keeping it pure and exported lets a test lock the guarantee
+ * that every field is always present — which is what stops ReviewStep's `draft.sku.trim()` from
+ * ever seeing `undefined` again.
+ */
+export function withDraftDefaults(d?: Partial<SellerDraft>): SellerDraft {
+  return { ...initialDraft, ...(d ?? {}) };
+}
 
 /** dataURL → File, to rebuild the catalog upload after a persisted reload. */
 function dataUrlToFile(dataUrl: string, name = "catalog.jpg"): File | undefined {
@@ -287,6 +297,19 @@ export const useSellerStore = create<SellerStore>()(
     }),
     {
       name: "asli-seller-flow",
+      // Fill any field a NEWER build added onto an OLDER persisted shape.
+      //
+      // The default merge is shallow: it replaces `draft` wholesale with whatever is in localStorage.
+      // A draft persisted before the wizard grew (mrp/stock/sku/description) is `{title, price,
+      // category}` only — so after rehydration `draft.sku` is undefined and ReviewStep's
+      // `draft.sku.trim()` throws "Cannot read properties of undefined", crashing the whole wizard at
+      // the Review step. Layering the persisted draft over the current (full-shape) initial draft
+      // guarantees every field is present, and closes the class of "old localStorage crashes new
+      // code after a deploy" bugs rather than just this one field.
+      merge: (persisted, current) => {
+        const p = (persisted ?? {}) as Partial<SellerStore>;
+        return { ...current, ...p, draft: withDraftDefaults(p.draft) };
+      },
       // Persist only what makes a reload resumable. The File/blob previews and the live-proof
       // result can't (or shouldn't) survive a reload; the catalog rides along as a data URL and the
       // challenge code is re-issued fresh on the challenge step (invariant #3 — never reuse a code).

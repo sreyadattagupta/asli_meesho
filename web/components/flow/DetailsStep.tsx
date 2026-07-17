@@ -21,7 +21,7 @@ export default function DetailsStep() {
   // it, or press Next.
   const [touched, setTouched] = useState(false);
 
-  const titleOk = draft.title.trim().length >= 3;
+  const titleOk = (draft.title ?? "").trim().length >= 3;
 
   return (
     <div className="card p-6">

@@ -170,10 +170,12 @@ export default function ReviewStep() {
           )}
           <span className="pill bg-white/5 capitalize text-white/40">{draft.category}</span>
         </div>
+        {/* `?? ""` is defensive: the store's persist merge already heals an old-shape draft, but a
+            crash here takes the whole wizard down, so we don't also trust the field to be a string. */}
         <p className="mt-2 text-xs text-white/40">
-          {draft.stock} in stock{draft.sku.trim() ? ` · SKU ${draft.sku.trim()}` : ""}
+          {draft.stock} in stock{(draft.sku ?? "").trim() ? ` · SKU ${draft.sku.trim()}` : ""}
         </p>
-        {draft.description.trim() && (
+        {(draft.description ?? "").trim() && (
           <p className="mt-2 line-clamp-3 text-xs text-white/50">{draft.description}</p>
         )}
       </div>
