@@ -24,6 +24,12 @@ RUN pip install --no-cache-dir -r requirements.txt \
 RUN pip install --no-cache-dir torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cpu \
     && pip install --no-cache-dir "transformers>=4.44,<5" "safetensors>=0.4" "sentencepiece>=0.2"
 
+# Cache-bust the source COPY. A `gcloud run deploy --source` build reused a stale COPY layer once
+# (a code change to main.py shipped but the running image still had the old file), so pin the layer
+# to a value that changes per meaningful deploy — this forces the source below to rebuild fresh while
+# the heavy pip layers above stay cached.
+ARG SOURCE_REV=agent1-siglip-vlm-rescue
+RUN echo "source rev: ${SOURCE_REV}"
 COPY . .
 
 # Agent-1 ONNX backbones (CLIP + DINOv2, ~420MB) are hosted on the HF Hub, NOT in the Cloud Build

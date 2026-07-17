@@ -28,6 +28,16 @@ if not _mlog.handlers:
     _mlog.addHandler(_mh)
     _mlog.propagate = False
 
+# Agent-1 possession log — every same-item decision, so a false rejection is debuggable from the
+# Cloud Run logs (the score, the bar, whether the VLM rescue ran, and the verdict).
+_alog = logging.getLogger("agent1.match")
+_alog.setLevel(logging.INFO)
+if not _alog.handlers:
+    _ah = logging.StreamHandler()
+    _ah.setFormatter(logging.Formatter("%(asctime)s [agent1] %(levelname)s %(message)s"))
+    _alog.addHandler(_ah)
+    _alog.propagate = False
+
 
 def _load_dotenv() -> None:
     """Load vlm-service/.env into os.environ (no python-dotenv dep) so SERPAPI_KEY, OLLAMA_*, etc.
@@ -333,15 +343,23 @@ async def vlm_match(
                     "dino_signal": None, "gate_signal": method, "degraded": True}
             match_desc = f"phash fallback {gate_score:.2f} (no ONNX backbone)"
 
-        # VLM feature-comparison tie-breaker (Live Proof recall fix). CLIP is robust to background
-        # (it runs on zeroed-bg crops) but still dips with angle/lighting/distance, so a GENUINE
-        # same-product capture can fall just under the bar. When the embedding gate FAILS inside the
-        # ambiguous band, ask the VLM to judge same-vs-different from INTRINSIC features only —
-        # pattern/colour/print/logo/style — explicitly ignoring background, lighting, angle, hands.
-        # It can only PROMOTE a borderline fail to pass (recall-only); it never vetoes a CLIP pass,
-        # so fraud protection (CLIP<LO, challenge code, reuse/liveness, human review) is unchanged.
+        # VLM feature-comparison tie-breaker (Live Proof recall fix). The embedding gate is robust to
+        # background (it runs on zeroed-bg crops) but still dips with angle/lighting/distance/white
+        # balance, so a GENUINE same-product capture can fall just under the bar. When the gate FAILS
+        # inside the ambiguous band, ask the VLM to judge same-vs-different from INTRINSIC features
+        # only — pattern/colour/print/logo/style — explicitly ignoring how the photo was taken, and
+        # treating a colour as matching across shade/lighting shifts (only a different hue family
+        # counts). It can only PROMOTE a borderline fail to pass (recall-only); it never vetoes a
+        # pass, so fraud protection (score < LO, challenge code, reuse/liveness, human review) is
+        # unchanged.
+        #
+        # SigLIP is included here — this was the production false-negative bug. In prod the gate is
+        # SigLIP (bar 0.82) whose genuine headroom is thin (a clean re-capture scores ~0.845), so a
+        # different phone / lighting / shade routinely dips a GENUINE photo just under the bar. With
+        # the rescue previously limited to the CLIP path, that sub-bar genuine had no recall route and
+        # was rejected with "retake" — exactly the reported symptom.
         vlm_compare = None
-        if method in ("clip", "dinov2-fallback") and not same and SAME_ITEM_VLM_LO <= gate_score < SAME_ITEM_VLM_HI:
+        if method in ("clip", "dinov2-fallback", "siglip") and not same and SAME_ITEM_VLM_LO <= gate_score < SAME_ITEM_VLM_HI:
             try:
                 vc = await vlm_backend.run_vlm(
                     prompts.same_item_compare_prompt(), [catalog_bytes, live_bytes])
@@ -384,6 +402,13 @@ async def vlm_match(
             reason = (f"Product mismatch detected. Please capture the same product again. "
                       f"({match_desc})")
 
+        _alog.info(
+            "match: passed=%s same_item=%s method=%s gate_score=%.4f bar=%s vlm_rescue=%s "
+            "color_sim=%.3f reuse=%s conf=%.3f",
+            passed, same_item_flag, method, gate_score, gate.get("threshold"),
+            (vlm_compare.get("same_product") if isinstance(vlm_compare, dict) else None),
+            color_sim, reuse_suspect, confidence,
+        )
         return {
             "same_item": same_item_flag,
             "code_visible": code_visible,
