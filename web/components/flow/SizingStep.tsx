@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/Badge";
 import { ConfidenceBar } from "@/components/ui/ConfidenceBar";
 import { useSellerStore } from "@/lib/store";
 import { useT } from "@/lib/i18n";
+import { WizardNav } from "./WizardNav";
 import type { I18nKey } from "@/lib/i18n/en";
 import { useVoiceGuide } from "@/lib/useVoiceGuide";
 import { toSizeChart } from "@/lib/sizing";
@@ -472,6 +473,8 @@ export default function SizingStep() {
           </button>
         </div>
       )}
+
+      <WizardNav />
     </div>
   );
 }

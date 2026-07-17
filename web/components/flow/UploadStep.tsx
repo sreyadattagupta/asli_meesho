@@ -150,7 +150,7 @@ export default function UploadStep() {
       </div>
 
       {/* First step: no Previous, and nothing typed yet to save. Cancel is still offered. */}
-      <WizardNav canSaveDraft={false} />
+      <WizardNav />
 
       {cameraOpen && (
         <PhotoCamera

@@ -7,7 +7,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Eye, Trash2, Upload, EyeOff, RefreshCw } from "lucide-react";
+import { Eye, Trash2, Upload, EyeOff, RefreshCw, PlayCircle } from "lucide-react";
 import type { Listing, SizeMeasurement } from "@/lib/db/types";
 
 const STATUS_STYLE: Record<string, string> = {
@@ -112,15 +112,24 @@ export function ProductRow({
             </span>
           )}
 
-          {/* Re-running the agents means walking the real flow — there is no "just re-score" shortcut
-              that wouldn't fabricate a result, so this routes to the flow rather than faking one. */}
+          {/* A draft RESUMES (jumps past agents already passed); a live listing RE-RUNS from the top.
+              Both walk the real flow — there is no "just re-score" shortcut that wouldn't fabricate a
+              result — but the label tells the seller which one they're getting. */}
           <Link
             href={`/seller/create-listing?listing=${listing.id}`}
             className="rounded-lg p-2 text-white/50 transition hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-asli-violet"
-            aria-label={`Re-run verification for ${listing.title}`}
-            title="Re-run AI checks"
+            aria-label={
+              listing.status === "draft"
+                ? `Continue the ${listing.title || "untitled"} draft`
+                : `Re-run verification for ${listing.title}`
+            }
+            title={listing.status === "draft" ? "Continue draft" : "Re-run AI checks"}
           >
-            <RefreshCw className="h-4 w-4" aria-hidden />
+            {listing.status === "draft" ? (
+              <PlayCircle className="h-4 w-4" aria-hidden />
+            ) : (
+              <RefreshCw className="h-4 w-4" aria-hidden />
+            )}
           </Link>
 
           {listing.status === "live" ? (

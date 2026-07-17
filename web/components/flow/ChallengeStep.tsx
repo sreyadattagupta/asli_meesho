@@ -6,6 +6,7 @@ import { StreamingChecklist } from "@/components/ui/StreamingChecklist";
 import { useSellerStore } from "@/lib/store";
 import { useT } from "@/lib/i18n";
 import { useVoiceGuide } from "@/lib/useVoiceGuide";
+import { WizardNav } from "./WizardNav";
 import { decide, stepForAction } from "@/lib/orchestrator";
 import type { OrchestratorDecision, OrchestratorAction, FlowStep } from "@/lib/orchestrator";
 import type { I18nKey } from "@/lib/i18n/en";
@@ -270,6 +271,10 @@ export default function ChallengeStep() {
           {note}
         </p>
       )}
+
+      {/* Stuck here? Save the draft and come back to it, or start a fresh listing — the possession
+          proof you've done so far is kept with the draft. */}
+      <WizardNav />
     </div>
   );
 }

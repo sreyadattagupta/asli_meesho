@@ -1,125 +1,118 @@
 "use client";
 
-// Previous · Save Draft · Cancel · Next — the controls every wizard step carries (spec §5).
+// The footer every wizard step carries: Previous · Save draft & exit · Start new · Next.
 //
-// The agent steps (trigger/challenge/sizing) drive themselves: their "Next" IS the check, so they
-// render this with `next` omitted and the orchestrator decides where the seller goes. The data steps
-// (details/pricing/inventory) pass a validated `next`.
+// The agent steps (trigger/challenge/sizing) drive themselves — their verify button IS the advance —
+// so they render this with `next` omitted. The data steps (details/pricing/inventory) pass a
+// validated `next`.
+//
+// Leaving is NON-DESTRUCTIVE: the draft listing row exists server-side from the Upload step on, so
+// "Save draft & exit" and "Start new" both just free the CLIENT slot (localStorage) — the draft stays
+// in My Listings and resumes from there (features/seller/ProductRow → /seller/create-listing?listing=).
+// That is what lets a seller stuck at Agent 1 or Agent 2 walk away and start a fresh listing.
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ArrowRight, Save, X } from "lucide-react";
-import { Modal } from "@/components/ui/Modal";
+import { ArrowLeft, ArrowRight, LogOut, Plus } from "lucide-react";
 import { useToast } from "@/components/ui/Toast";
-import { useSellerStore } from "@/lib/store";
+import { useSellerStore, useSessionStore } from "@/lib/store";
 import { saveDraftFields } from "@/lib/draftClient";
 import { useT } from "@/lib/i18n";
-import { prevStep } from "@/lib/orchestrator";
+import { prevStep, AGENT_STEPS } from "@/lib/orchestrator";
 
 export function WizardNav({
   next,
   nextLabel,
   nextDisabled = false,
-  /** Steps with nothing typed yet (upload) hide it rather than offer an empty save. */
-  canSaveDraft = true,
 }: {
   next?: () => void;
   nextLabel?: string;
   nextDisabled?: boolean;
-  canSaveDraft?: boolean;
 }) {
   const router = useRouter();
   const { toast } = useToast();
   const t = useT();
   const step = useSellerStore((s) => s.step);
   const setStep = useSellerStore((s) => s.setStep);
-  const [confirmCancel, setConfirmCancel] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const reset = useSellerStore((s) => s.reset);
+  const setOwnerKey = useSellerStore((s) => s.setOwnerKey);
+  const [busy, setBusy] = useState<null | "exit" | "new">(null);
 
   const back = prevStep(step);
 
-  async function saveDraft() {
-    const { listingId, draft } = useSellerStore.getState();
-    if (!listingId) {
-      // Signed-out demo mode has no row to save to; the flow itself persists in localStorage.
-      toast({ kind: "success", message: t("wizard.savedLocal") });
-      return;
-    }
-    setSaving(true);
+  /** Persist whatever the seller has typed so far. No-op on agent steps (nothing typed yet). */
+  async function persist(): Promise<void> {
+    const { listingId, draft, step: cur } = useSellerStore.getState();
+    if (!listingId || AGENT_STEPS.includes(cur) || cur === "upload") return;
     try {
       await saveDraftFields(listingId, draft);
-      toast({ kind: "success", message: t("wizard.saved") });
-    } catch (e) {
-      toast({ kind: "error", message: e instanceof Error ? e.message : t("wizard.saveFailed") });
-    } finally {
-      setSaving(false);
+    } catch {
+      // Best-effort — the row already exists as a draft; a failed field save must not trap the seller
+      // in the wizard. Surfaced by the caller's toast.
     }
   }
 
+  async function saveAndExit() {
+    setBusy("exit");
+    await persist();
+    reset(); // free the client slot; the draft persists server-side and appears in My Listings
+    toast({ kind: "success", message: t("wizard.savedToListings") });
+    router.push("/seller/listings");
+  }
+
+  async function startNew() {
+    setBusy("new");
+    await persist(); // keep any typed fields on the current draft before we leave it
+    const { user } = useSessionStore.getState();
+    const key = user?.sellerId ?? user?.name ?? null;
+    reset();
+    if (key) setOwnerKey(key);
+    toast({ kind: "success", message: t("wizard.startedNew") });
+    setBusy(null);
+    // Stay on /seller/create-listing — reset() put the flow back at Upload, so a fresh listing begins.
+  }
+
   return (
-    <>
-      <div className="mt-6 flex flex-wrap items-center gap-2 border-t border-white/10 pt-4">
+    <div className="mt-6 flex flex-wrap items-center gap-2 border-t border-white/10 pt-4">
+      <button
+        onClick={() => back && setStep(back)}
+        disabled={!back}
+        // Disabled, not hidden: it keeps its place and the tooltip says why — a vanishing button reads
+        // as a bug. Null across the agent boundary (invariant #3: a spent code can't be re-entered).
+        title={back ? undefined : t("wizard.prevLocked")}
+        className="btn-ghost inline-flex min-h-[44px] items-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-30"
+      >
+        <ArrowLeft className="h-4 w-4" aria-hidden />
+        {t("wizard.previous")}
+      </button>
+
+      <button
+        onClick={() => void saveAndExit()}
+        disabled={busy !== null}
+        className="btn-ghost inline-flex min-h-[44px] items-center gap-1.5 disabled:opacity-40"
+      >
+        <LogOut className="h-4 w-4" aria-hidden />
+        {busy === "exit" ? t("wizard.saving") : t("wizard.saveExit")}
+      </button>
+
+      <button
+        onClick={() => void startNew()}
+        disabled={busy !== null}
+        className="btn-ghost inline-flex min-h-[44px] items-center gap-1.5 text-white/50 disabled:opacity-40"
+      >
+        <Plus className="h-4 w-4" aria-hidden />
+        {t("wizard.startNew")}
+      </button>
+
+      {next && (
         <button
-          onClick={() => back && setStep(back)}
-          disabled={!back}
-          // Disabled rather than hidden: the control keeps its place in the row, and the tooltip says
-          // why it's off — a button that vanishes reads as a bug.
-          title={back ? undefined : t("wizard.prevLocked")}
-          className="btn-ghost inline-flex min-h-[44px] items-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-30"
+          onClick={next}
+          disabled={nextDisabled}
+          className="btn-primary ml-auto inline-flex min-h-[44px] items-center gap-1.5 disabled:opacity-40"
         >
-          <ArrowLeft className="h-4 w-4" aria-hidden />
-          {t("wizard.previous")}
+          {nextLabel ?? t("wizard.next")}
+          <ArrowRight className="h-4 w-4" aria-hidden />
         </button>
-
-        {canSaveDraft && (
-          <button
-            onClick={() => void saveDraft()}
-            disabled={saving}
-            className="btn-ghost inline-flex min-h-[44px] items-center gap-1.5 disabled:opacity-40"
-          >
-            <Save className="h-4 w-4" aria-hidden />
-            {saving ? t("wizard.saving") : t("wizard.saveDraft")}
-          </button>
-        )}
-
-        <button
-          onClick={() => setConfirmCancel(true)}
-          className="btn-ghost inline-flex min-h-[44px] items-center gap-1.5 text-white/50 hover:text-asli-red"
-        >
-          <X className="h-4 w-4" aria-hidden />
-          {t("wizard.cancel")}
-        </button>
-
-        {next && (
-          <button
-            onClick={next}
-            disabled={nextDisabled}
-            className="btn-primary ml-auto inline-flex min-h-[44px] items-center gap-1.5 disabled:opacity-40"
-          >
-            {nextLabel ?? t("wizard.next")}
-            <ArrowRight className="h-4 w-4" aria-hidden />
-          </button>
-        )}
-      </div>
-
-      <Modal open={confirmCancel} onClose={() => setConfirmCancel(false)} title={t("wizard.leaveTitle")}>
-        <p className="text-sm text-white/60">{t("wizard.leaveBody")}</p>
-        <div className="mt-5 flex gap-3">
-          <button className="btn-ghost flex-1" onClick={() => setConfirmCancel(false)}>
-            {t("wizard.keepEditing")}
-          </button>
-          <button
-            className="btn-primary flex-1"
-            onClick={() => {
-              // Leave the store alone: reset() here would drop the listingId and orphan the draft row
-              // the seller was just promised they could come back to.
-              setConfirmCancel(false);
-              router.push("/seller/listings");
-            }}
-          >
-            {t("wizard.leave")}
-          </button>
-        </div>
-      </Modal>
-    </>
+      )}
+    </div>
   );
 }

@@ -5,6 +5,7 @@ import { useT } from "@/lib/i18n";
 import { useVoiceGuide } from "@/lib/useVoiceGuide";
 import { EvidenceCards } from "@/components/seller/EvidenceCards";
 import { Agent1Panel } from "@/components/seller/Agent1Panel";
+import { WizardNav } from "./WizardNav";
 
 // Step 2 — reverse-image result. TRIGGER ONLY (invariant #1). Never a verdict.
 // We name the platforms the photo was seen on (Flipkart / Myntra / Amazon /
@@ -131,6 +132,8 @@ export default function TriggerStep() {
       <button className="btn-primary mt-6" onClick={issueAndGo}>
         {t("flow.trigger.cta")}
       </button>
+
+      <WizardNav />
     </div>
   );
 }
