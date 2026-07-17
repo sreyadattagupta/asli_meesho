@@ -18,7 +18,7 @@ vi.mock("@/lib/auth", async () => {
 });
 
 import { POST } from "@/app/api/listings/route";
-import { GET as GET_ONE } from "@/app/api/listings/[id]/route";
+import { GET as GET_ONE, PATCH } from "@/app/api/listings/[id]/route";
 import { repoReady } from "@/lib/db";
 
 const validBody = { title: "Cotton Kurti — Rose", price: 349, category: "kurtis" };
@@ -90,6 +90,47 @@ describe("listings API", () => {
     expect(Array.isArray(body.images)).toBe(true);
     expect(Array.isArray(body.checks)).toBe(true);
     expect(typeof body.trustScore).toBe("number");
+  });
+
+  describe("PATCH — MRP must beat the selling price", () => {
+    // A struck-through price at or below what you actually charge is a fake discount. The database
+    // has the same constraint; these cover the API answering with something the seller can act on
+    // rather than letting the violation escape as a 500.
+    const patch = async (id: string, body: unknown) =>
+      PATCH(new Request(`http://x/api/listings/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+        { params: Promise.resolve({ id }) });
+
+    it("accepts an MRP above the price", async () => {
+      const { listingId } = await (await post(validBody)).json();
+      const res = await patch(listingId, { price: 749, mrp: 1299, stock: 3, sku: "K-1" });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.mrp).toBe(1299);
+      expect(body.stock).toBe(3);
+    });
+
+    it("400s when both arrive in one PATCH and the MRP is lower", async () => {
+      const { listingId } = await (await post(validBody)).json();
+      const res = await patch(listingId, { price: 749, mrp: 100 });
+      expect(res.status).toBe(400);
+      expect((await res.json()).error.code).toBe("invalid_mrp");
+    });
+
+    it("400s when only the MRP is sent and the STORED price is higher", async () => {
+      // The half-PATCH zod cannot see: price comes from the row, so the rule needs the merged view.
+      const { listingId } = await (await post(validBody)).json(); // price 349
+      const res = await patch(listingId, { mrp: 200 });
+      expect(res.status).toBe(400);
+      expect((await res.json()).error.code).toBe("invalid_mrp");
+    });
+
+    it("400s when only the PRICE is sent and it rises above the stored MRP", async () => {
+      const { listingId } = await (await post(validBody)).json();
+      await patch(listingId, { mrp: 500 });
+      const res = await patch(listingId, { price: 900 });
+      expect(res.status).toBe(400);
+      expect((await res.json()).error.code).toBe("invalid_mrp");
+    });
   });
 
   it("GET 404s for unknown id", async () => {

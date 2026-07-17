@@ -49,6 +49,18 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     // A seller may publish/unpublish their own listing, but only the agents can mark it verified —
     // letting a PATCH set `verified` would hand out the ✓ badge for free and void the whole premise.
     const patch = parsed.data;
+
+    // MRP is the struck-through "was" price, so it only means anything above the selling price.
+    // Zod cannot judge this: either field may be absent from the PATCH and come from the stored row
+    // instead, so the rule needs the merged view. The database enforces the same thing, but a
+    // constraint violation surfaces as a 500 "Something went wrong" — which tells the seller
+    // nothing about what to fix.
+    const price = patch.price ?? listing.price;
+    const mrp = patch.mrp ?? listing.mrp;
+    if (mrp !== undefined && mrp <= price) {
+      return fail(400, "invalid_mrp", "MRP must be higher than the selling price.");
+    }
+
     const updated = await repo.updateListing(id, patch);
     await repo.appendAudit({
       listingId: id, actor: user.id, event: "listing_updated",
