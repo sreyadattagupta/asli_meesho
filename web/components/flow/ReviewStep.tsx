@@ -5,13 +5,16 @@ import { Camera, QrCode, Ruler, ShieldQuestion } from "lucide-react";
 import { AgentReasonRow } from "@/components/ui/AgentReasonRow";
 import { ConfidenceBar } from "@/components/ui/ConfidenceBar";
 import { useSellerStore } from "@/lib/store";
+import { saveDraftFields } from "@/lib/draftClient";
 import { useT } from "@/lib/i18n";
 import { useVoiceGuide } from "@/lib/useVoiceGuide";
+import { WizardNav } from "./WizardNav";
 
-// Step 5 — the decision panel. Renders BLOCK / ESCALATE / APPROVE outcomes with
-// each agent's reason + confidence vs the orchestrator's required bar (invariant #8).
+// Step 8 ("Preview") — the decision panel. Renders BLOCK / ESCALATE / APPROVE outcomes with each
+// agent's reason + confidence vs the orchestrator's required bar (invariant #8), and owns the single
+// point where the seller's typed fields are written to the listing row.
 export default function ReviewStep() {
-  const { decision, matchResult, sizeChart, listingId, setApproved, setStep, reset } =
+  const { decision, matchResult, sizeChart, listingId, draft, setApproved, setStep, reset } =
     useSellerStore();
   const t = useT();
   // Voice matches the outcome shown — blocked / escalated / ready-to-publish.
@@ -32,6 +35,12 @@ export default function ReviewStep() {
     setErr(null);
     try {
       if (listingId) {
+        // Write what the seller typed BEFORE going live. The Details/Pricing/Inventory steps keep
+        // their values in the store so the seller can move between them freely; this is where they
+        // become the listing. Publish re-checks the title server-side and refuses an untitled draft,
+        // so a failure here must stop the publish rather than ship a blank product to the feed.
+        await saveDraftFields(listingId, draft);
+
         const res = await fetch(`/api/listings/${listingId}/publish`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -49,8 +58,10 @@ export default function ReviewStep() {
       }
       setApproved(true);
       setStep("live");
-    } catch {
-      setErr("Publish failed — retry.");
+    } catch (e) {
+      // saveDraftFields throws a DraftSaveError carrying the route's own message ("Add a product
+      // title…"); anything else is a genuine publish failure.
+      setErr(e instanceof Error ? e.message : "Publish failed — retry.");
     } finally {
       setBusy(false);
     }
@@ -143,6 +154,30 @@ export default function ReviewStep() {
       </span>
       <h2 className="mt-3 text-2xl font-bold">{t("flow.review.title")}</h2>
 
+      {/* What the seller typed, laid out the way a buyer will meet it — the last chance to catch a
+          wrong price or a typo before it's on the marketplace. */}
+      <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+        <p className="text-base font-bold text-white">{draft.title || "Untitled listing"}</p>
+        <div className="mt-1.5 flex flex-wrap items-center gap-2">
+          <span className="text-lg font-black text-white">₹{draft.price}</span>
+          {draft.mrp > draft.price && (
+            <>
+              <span className="text-sm text-white/30 line-through">₹{draft.mrp}</span>
+              <span className="pill bg-asli-green/15 text-asli-green ring-1 ring-asli-green/30">
+                {t("flow.pricing.off", { n: Math.round((1 - draft.price / draft.mrp) * 100) })}
+              </span>
+            </>
+          )}
+          <span className="pill bg-white/5 capitalize text-white/40">{draft.category}</span>
+        </div>
+        <p className="mt-2 text-xs text-white/40">
+          {draft.stock} in stock{draft.sku.trim() ? ` · SKU ${draft.sku.trim()}` : ""}
+        </p>
+        {draft.description.trim() && (
+          <p className="mt-2 line-clamp-3 text-xs text-white/50">{draft.description}</p>
+        )}
+      </div>
+
       {matchResult && (
         <>
           <h3 className="mt-4 text-sm font-semibold text-white/60">
@@ -178,6 +213,10 @@ export default function ReviewStep() {
       <button className="btn-primary mt-6 w-full" onClick={publish} disabled={busy}>
         {busy ? t("flow.review.publishing") : t("flow.review.publish")}
       </button>
+
+      {/* Previous goes back to Inventory — the data steps are the seller's to revisit. Publish is the
+          step's own action above, so no Next here. */}
+      <WizardNav />
     </div>
   );
 }

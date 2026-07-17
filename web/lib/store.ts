@@ -37,6 +37,18 @@ export interface Challenge {
   expiresAt: number;
 }
 
+/** What the seller types, across the Details / Pricing / Inventory steps. */
+export interface SellerDraft {
+  title: string;
+  description: string;
+  price: number;
+  /** 0 = no strike-through price. Only saved when it is above `price`. */
+  mrp: number;
+  category: "sarees" | "kurtis" | "footwear" | "jewellery";
+  stock: number;
+  sku: string;
+}
+
 interface SellerStore {
   step: FlowStep;
 
@@ -47,7 +59,9 @@ interface SellerStore {
 
   // server-side listing draft (created on flow entry; absent in signed-out demo mode)
   listingId?: string;
-  draft: { title: string; price: number; category: "sarees" | "kurtis" | "footwear" | "jewellery" };
+  // Filled across the Details / Pricing / Inventory steps, which run AFTER the agents — so this is
+  // empty for the whole verification half of the flow.
+  draft: SellerDraft;
 
   // upload
   catalogFile?: File;
@@ -168,7 +182,18 @@ export const useSessionStore = create<SessionStore>((set) => ({
 
 // ---- seller flow slice ----------------------------------------------------
 
-const initialDraft = { title: "", price: 349, category: "kurtis" as const };
+// Priced near Meesho's typical AOV (~₹480 [S10]) so the Pricing step opens on a plausible number
+// rather than a zero the seller has to clear. `stock: 1` matches the reseller who lists what they
+// physically hold — which is the whole premise of the possession proof.
+const initialDraft = {
+  title: "",
+  description: "",
+  price: 349,
+  mrp: 0,
+  category: "kurtis" as const,
+  stock: 1,
+  sku: "",
+};
 
 /** dataURL → File, to rebuild the catalog upload after a persisted reload. */
 function dataUrlToFile(dataUrl: string, name = "catalog.jpg"): File | undefined {

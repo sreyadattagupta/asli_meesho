@@ -12,7 +12,10 @@ export interface User { id: string; auth0Sub: string; email: string; name: strin
 // existing row predates them. `bankLast4` is deliberately the ONLY bank data we keep — a demo has no
 // business holding a full account number, and not storing it is cheaper than protecting it.
 export interface Seller { id: string; userId?: string; name: string; shopName: string; trustScore: number; trustBand: TrustBand; kycStatus: KycStatus; kycDocUrl?: string; isNew: boolean; passes: number; fails: number; createdAt: string; businessName?: string; gst?: string; pan?: string; address?: string; mobile?: string; bankLast4?: string; }
-export interface Listing { id: string; sellerId: string; title: string; description: string; price: number; category: string; status: ListingStatus; flowStep: string; verified: boolean; sizeChart?: Record<string, number>; rankBoost: number; createdAt: string; }
+// `mrp`, `stock` and `sku` arrive from the wizard's Pricing and Inventory steps and are optional:
+// every row created before those steps existed predates them, and a listing is still sellable
+// without an MRP or a SKU. `stock` absent means "not tracked", which is not the same as zero.
+export interface Listing { id: string; sellerId: string; title: string; description: string; price: number; mrp?: number; category: string; status: ListingStatus; flowStep: string; verified: boolean; sizeChart?: Record<string, number>; rankBoost: number; stock?: number; sku?: string; createdAt: string; }
 export interface ProductImage { id: string; listingId: string; url: string; imageHash: string; embeddingId?: string; kind: ImageKind; }
 /** ProductImage without the `url` blob — what list views are allowed to load. See Repo.listImageMeta. */
 export type ImageMeta = Pick<ProductImage, "id" | "listingId" | "kind">;
@@ -26,3 +29,7 @@ export interface PromiseRecord { id: string; listingId: string; orderId?: string
 export interface TrustEvent { id: string; sellerId: string; delta: number; reason: string; source: string; createdAt: string; }
 export interface Review { id: string; listingId: string; status: "pending" | "approved" | "rejected"; reviewerNote?: string; reviewerUserId?: string; decidedAt?: string; }
 export interface AuditEntry { id: number; listingId?: string; actor: string; event: string; data: Record<string, unknown>; createdAt: string; }
+// Buyer↔seller messages, scoped to an ORDER rather than free-form. The order is what proves the two
+// parties have business with each other: it names the buyer and, through the listing, the seller —
+// so who may read and write a thread is decided by rows we already have, not by a separate ACL.
+export interface Message { id: string; orderId: string; listingId: string; fromUserId: string; body: string; createdAt: string; readAt?: string; }

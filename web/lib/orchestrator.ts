@@ -11,21 +11,67 @@ export type FlowStep =
   | "trigger" // reverse-image search (TRIGGER only — invariant #1)
   | "challenge" // dynamic camera-only possession challenge
   | "sizing" // flat-lay measurement
-  | "review" // human approval gate
-  | "live"; // listing goes LIVE
+  | "details" // title, category, description
+  | "pricing" // price, MRP, discount
+  | "inventory" // stock, SKU
+  | "review" // human approval gate (shown as "Preview")
+  | "live"; // listing goes LIVE (shown as "Publish")
 
+// The agents run BEFORE the seller types anything. Deliberate: a listing that cannot prove possession
+// is going to be stopped either way, and making someone fill in three forms first only to be blocked
+// wastes the honest seller's time and the thief's is not worth protecting.
 export const FLOW_ORDER: FlowStep[] = [
   "upload",
   "trigger",
   "challenge",
   "sizing",
+  "details",
+  "pricing",
+  "inventory",
   "review",
   "live",
+];
+
+/** Steps owned by an agent: the seller cannot skip forward past them or walk back into them. */
+export const AGENT_STEPS: FlowStep[] = ["trigger", "challenge", "sizing"];
+
+/** One pill in the progress indicator. Agent 1 spans two steps but reads as a single phase. */
+export interface FlowPhase {
+  key: string;
+  label: string;
+  steps: FlowStep[];
+}
+
+export const FLOW_PHASES: FlowPhase[] = [
+  { key: "upload", label: "Upload", steps: ["upload"] },
+  { key: "agent1", label: "Agent 1 · Possession", steps: ["trigger", "challenge"] },
+  { key: "agent2", label: "Agent 2 · Sizing", steps: ["sizing"] },
+  { key: "details", label: "Details", steps: ["details"] },
+  { key: "pricing", label: "Pricing", steps: ["pricing"] },
+  { key: "inventory", label: "Inventory", steps: ["inventory"] },
+  { key: "review", label: "Preview", steps: ["review"] },
+  { key: "live", label: "Publish", steps: ["live"] },
 ];
 
 export function nextStep(step: FlowStep): FlowStep {
   const i = FLOW_ORDER.indexOf(step);
   return FLOW_ORDER[Math.min(i + 1, FLOW_ORDER.length - 1)];
+}
+
+/**
+ * The step a "Previous" button goes to, or null when there isn't one.
+ *
+ * Null whenever the step behind is an agent's. The challenge code is single-use and time-bound
+ * (invariant #3): re-entering `challenge` would either burn a code the seller already spent or hand
+ * back a reusable one, which is exactly the reuse the invariant exists to stop. Agent 2's
+ * measurement is likewise already written against this listing. The seller isn't stuck — the flow
+ * offers "Start over", which issues a fresh code against a fresh attempt.
+ */
+export function prevStep(step: FlowStep): FlowStep | null {
+  const i = FLOW_ORDER.indexOf(step);
+  if (i <= 0) return null;
+  const prev = FLOW_ORDER[i - 1];
+  return AGENT_STEPS.includes(prev) ? null : prev;
 }
 
 export interface FlowState {
@@ -120,7 +166,7 @@ export const MSG_LIVE_PROOF_BLOCKED = MSG_LIVE_PROOF_ESCALATED;
 export function stepForAction(a: OrchestratorAction): FlowStep {
   switch (a) {
     case "AUTO_APPROVE":
-      return "sizing"; // caller advances to "review" when a measurement already exists
+      return "sizing"; // caller advances past it when a measurement already exists
     case "RE_CHALLENGE":
       return "challenge";
     case "ESCALATE_HUMAN":

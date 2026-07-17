@@ -53,8 +53,19 @@ describe("listings API", () => {
     expect(listing?.sellerId).toBe(sessionUser.sellerId);
   });
 
-  it("400s on invalid body", async () => {
-    const res = await post({ title: "x" });
+  it("creates an UNTITLED draft from an empty body", async () => {
+    // The wizard posts {} the moment the catalog photo is chosen: the row has to exist for the
+    // agents to write checks against, but the seller types the title later (after Agent 1 and 2).
+    const res = await post({});
+    expect(res.status).toBe(200);
+    const repo = await repoReady();
+    const listing = await repo.getListing((await res.json()).listingId);
+    expect(listing?.title).toBe("");
+    expect(listing?.status).toBe("draft");
+  });
+
+  it("400s on a body that is present but invalid", async () => {
+    const res = await post({ price: -5 });
     expect(res.status).toBe(400);
     expect((await res.json()).error.code).toBe("invalid_body");
   });

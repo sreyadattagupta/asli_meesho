@@ -96,7 +96,7 @@ export default function ResultStep() {
             moment it renders throws that away. reset() clears the finished flow on the way out so
             /sell starts clean next time. */}
         <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-          <Link href="/seller/products" className="btn-primary" onClick={reset}>
+          <Link href="/seller/listings" className="btn-primary" onClick={reset}>
             {t("flow.result.products")}
           </Link>
           <button className="btn-ghost" onClick={reset}>

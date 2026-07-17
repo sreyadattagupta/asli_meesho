@@ -345,7 +345,7 @@ export default function SizingStep() {
               </div>
             ))}
           </div>
-          <button className="btn-primary mt-4 w-full" onClick={() => setStep("review")}>
+          <button className="btn-primary mt-4 w-full" onClick={() => setStep("details")}>
             {t("flow.sizing.continue")}
           </button>
         </div>
@@ -467,7 +467,7 @@ export default function SizingStep() {
             ))}
           </div>
 
-          <button className="btn-primary mt-4 w-full" onClick={() => setStep("review")}>
+          <button className="btn-primary mt-4 w-full" onClick={() => setStep("details")}>
             {t("flow.sizing.continue")}
           </button>
         </div>

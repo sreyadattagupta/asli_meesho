@@ -24,6 +24,13 @@ export async function POST(
     if (!listing || listing.sellerId !== user.sellerId) return fail(404, "not_found", "Listing not found.");
     if (listing.status === "blocked") return fail(409, "blocked", "A blocked listing cannot go live.");
 
+    // Drafts are created untitled — the wizard collects the title after the agents run, so the row
+    // exists for a while with `title: ""`. This is the gate that stops one of those reaching the
+    // marketplace if the Details step were ever skipped or its PATCH silently failed.
+    if (listing.title.trim().length < 3) {
+      return fail(409, "incomplete", "Add a product title before publishing.");
+    }
+
     // ✓ Asli Verified requires a passing possession check (Agent 1 ∧ Agent 2 upstream).
     const checks = await repo.listChecks(id);
     const passed = checks.some((c) => c.agent === "possession" && Boolean(c.payload["passed"]));

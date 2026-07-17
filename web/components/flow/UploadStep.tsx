@@ -5,13 +5,16 @@ import { useSellerStore } from "@/lib/store";
 import { useT } from "@/lib/i18n";
 import { useVoiceGuide } from "@/lib/useVoiceGuide";
 import { PhotoCamera } from "@/components/ui/PhotoCamera";
+import { WizardNav } from "./WizardNav";
 
 // Step 1 — catalog upload. Gallery upload is FINE here (invariant #2 only bans it
 // on the challenge step). This is the seller's listing photo.
-const CATEGORIES = ["sarees", "kurtis", "footwear", "jewellery"] as const;
-
+//
+// The photo, and nothing else. Title, price and stock come later (Details/Pricing/Inventory), after
+// the agents have cleared the listing — no point making an honest seller fill in three forms before
+// we can tell them whether the photo can be verified at all.
 export default function UploadStep() {
-  const { catalogPreview, draft, setDraft, setCatalog, setTrigger, setStep, setListingId } = useSellerStore();
+  const { catalogPreview, setDraft, setCatalog, setTrigger, setStep, setListingId } = useSellerStore();
   const t = useT();
   useVoiceGuide("flow.upload.voice");
   const galleryRef = useRef<HTMLInputElement>(null);
@@ -32,13 +35,18 @@ export default function UploadStep() {
     if (!useSellerStore.getState().draft.title) setDraft({ title: "Chikankari Embroidered Kurti — Black" });
   }
 
-  /** Create the server-side draft once; signed-out demo continues locally (labelled). */
+  /**
+   * Create the server-side draft once; signed-out demo continues locally (labelled).
+   *
+   * Sent empty — the route defaults an untitled draft. The row has to exist before the agents run
+   * because every check, image and challenge claim is written against its id.
+   */
   async function ensureDraft(): Promise<void> {
     if (useSellerStore.getState().listingId) return;
     const res = await fetch("/api/listings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(draft),
+      body: JSON.stringify({}),
     });
     if (res.ok) {
       const body = (await res.json()) as { listingId: string };
@@ -78,42 +86,7 @@ export default function UploadStep() {
       <h2 className="text-2xl font-bold">{t("flow.upload.title")}</h2>
       <p className="mt-1 text-sm text-white/50">{t("flow.upload.subtitle")}</p>
 
-      <div className="mt-5 grid gap-3 sm:grid-cols-[1fr_8rem_10rem]">
-        <label className="flex flex-col gap-1 text-xs font-medium text-white/50">
-          {t("flow.upload.titleLabel")}
-          <input
-            value={draft.title}
-            onChange={(e) => setDraft({ title: e.target.value })}
-            placeholder={t("flow.upload.titlePlaceholder")}
-            className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5 text-sm text-white placeholder:text-white/25 focus:outline-none focus-visible:ring-2 focus-visible:ring-asli-violet"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-xs font-medium text-white/50">
-          {t("flow.upload.priceLabel")}
-          <input
-            type="number"
-            min={1}
-            max={100000}
-            value={draft.price}
-            onChange={(e) => setDraft({ price: Math.max(1, Math.floor(Number(e.target.value) || 0)) })}
-            className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5 text-sm text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-asli-violet"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-xs font-medium text-white/50">
-          {t("flow.upload.categoryLabel")}
-          <select
-            value={draft.category}
-            onChange={(e) => setDraft({ category: e.target.value as (typeof CATEGORIES)[number] })}
-            className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5 text-sm text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-asli-violet"
-          >
-            {CATEGORIES.map((c) => (
-              <option key={c} value={c} className="bg-[#160f26]">{c}</option>
-            ))}
-          </select>
-        </label>
-      </div>
-
-      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+      <div className="mt-5 grid gap-4 sm:grid-cols-2">
         {/* A real <button>, not a div+onClick: the dropzone is the primary control on this step and
             has to be reachable by keyboard and announced to a screen reader (invariant #11). */}
         <button
@@ -161,7 +134,7 @@ export default function UploadStep() {
           </button>
           <button
             className="btn-primary"
-            disabled={!catalogPreview || draft.title.trim().length < 3 || busy}
+            disabled={!catalogPreview || busy}
             onClick={runCheck}
           >
             {busy ? t("flow.upload.checking") : t("flow.upload.runCheck")}
@@ -175,6 +148,9 @@ export default function UploadStep() {
           <p className="text-xs text-white/40">{t("flow.upload.triggerNote")}</p>
         </div>
       </div>
+
+      {/* First step: no Previous, and nothing typed yet to save. Cancel is still offered. */}
+      <WizardNav canSaveDraft={false} />
 
       {cameraOpen && (
         <PhotoCamera

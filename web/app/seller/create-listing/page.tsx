@@ -1,32 +1,65 @@
 "use client";
 
-import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useSellerStore } from "@/lib/store";
 import Stepper from "@/components/flow/Stepper";
 import UploadStep from "@/components/flow/UploadStep";
 import TriggerStep from "@/components/flow/TriggerStep";
 import ChallengeStep from "@/components/flow/ChallengeStep";
 import SizingStep from "@/components/flow/SizingStep";
+import DetailsStep from "@/components/flow/DetailsStep";
+import PricingStep from "@/components/flow/PricingStep";
+import InventoryStep from "@/components/flow/InventoryStep";
 import ReviewStep from "@/components/flow/ReviewStep";
 import ResultStep from "@/components/flow/ResultStep";
+import { PageHeader } from "@/components/nav/PageHeader";
+import type { FlowStep } from "@/lib/orchestrator";
 
 // useSearchParams() opts the subtree into client-side rendering, so Next requires a Suspense
-// boundary around it or the /sell prerender fails the build outright.
-export default function SellPage() {
+// boundary around it or the prerender fails the build outright.
+export default function CreateListingPage() {
   return (
-    <Suspense fallback={<div className="mx-auto max-w-xl px-4 py-16 text-center text-white/40">Loading…</div>}>
-      <SellFlow />
+    <Suspense fallback={<WizardSkeleton />}>
+      <ListingWizard />
     </Suspense>
   );
 }
 
-function SellFlow() {
+function WizardSkeleton() {
+  return (
+    <div aria-busy>
+      <div className="h-8 w-48 animate-pulse rounded bg-white/10" />
+      <div className="mt-6 h-6 w-full animate-pulse rounded bg-white/5" />
+      <div className="mt-8 h-64 animate-pulse rounded-2xl bg-white/5" />
+    </div>
+  );
+}
+
+const STEPS: Record<FlowStep, React.ComponentType> = {
+  upload: UploadStep,
+  trigger: TriggerStep,
+  challenge: ChallengeStep,
+  sizing: SizingStep,
+  details: DetailsStep,
+  pricing: PricingStep,
+  inventory: InventoryStep,
+  review: ReviewStep,
+  live: ResultStep,
+};
+
+/**
+ * The listing wizard. Nothing here runs on its own — the seller reaches this page by clicking
+ * "Create Listing", and Agent 1 only fires when they press "Run image check" on the first step
+ * (spec §3). Signing in never starts an agent.
+ */
+function ListingWizard() {
   const step = useSellerStore((s) => s.step);
   const reset = useSellerStore((s) => s.reset);
   const setOwnerKey = useSellerStore((s) => s.setOwnerKey);
   const setListingId = useSellerStore((s) => s.setListingId);
+  const reduce = useReducedMotion();
   // `?listing=<id>` — the seller portal's "Re-run AI checks" action. The flow re-verifies THAT
   // listing (UploadStep reuses an existing listingId instead of creating a draft) rather than
   // starting a new one. The id is not trusted: /api/challenge and /api/sizing both prove ownership
@@ -58,7 +91,7 @@ function SellFlow() {
           setOwnerKey(key);
         }
       } catch {
-        /* unauthenticated / offline — middleware gates /sell; leave the flow as-is */
+        /* offline — the layout guard already proved the session; leave the flow as-is */
       } finally {
         if (!cancelled) setReady(true);
       }
@@ -68,35 +101,30 @@ function SellFlow() {
     };
   }, [reset, setOwnerKey, setListingId, rerunListingId]);
 
-  if (!ready) {
-    return (
-      <main className="mx-auto max-w-2xl px-6 py-10">
-        <div className="h-8 w-32 animate-pulse rounded bg-white/10" />
-        <div className="mt-8 h-64 animate-pulse rounded-2xl bg-white/5" />
-      </main>
-    );
-  }
+  if (!ready) return <WizardSkeleton />;
+
+  const StepView = STEPS[step];
 
   return (
-    <main className="mx-auto max-w-2xl px-6 py-10">
-      <header className="mb-6 flex items-center justify-between">
-        <Link href="/" className="text-lg font-black tracking-tight">
-          <span className="bg-gradient-to-r from-asli-violet to-asli-pink bg-clip-text text-transparent">
-            असली
-          </span>{" "}
-          Asli
-        </Link>
-        <span className="pill bg-white/5 text-white/40">seller flow</span>
-      </header>
+    <div className="mx-auto max-w-2xl">
+      <PageHeader
+        title="Create listing"
+        subtitle="Prove it's yours, get it measured, then tell buyers about it."
+      />
 
       <Stepper step={step} />
 
-      {step === "upload" && <UploadStep />}
-      {step === "trigger" && <TriggerStep />}
-      {step === "challenge" && <ChallengeStep />}
-      {step === "sizing" && <SizingStep />}
-      {step === "review" && <ReviewStep />}
-      {step === "live" && <ResultStep />}
-    </main>
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={step}
+          initial={reduce ? { opacity: 0 } : { opacity: 0, x: 16 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={reduce ? { opacity: 0 } : { opacity: 0, x: -16 }}
+          transition={{ duration: 0.25, ease: "easeOut" }}
+        >
+          <StepView />
+        </motion.div>
+      </AnimatePresence>
+    </div>
   );
 }

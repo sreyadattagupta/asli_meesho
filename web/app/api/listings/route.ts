@@ -14,12 +14,18 @@ export async function GET(req: Request) {
   }
 }
 
-/** Create a listing draft — the seller flow's entry point. */
+/**
+ * Create a listing DRAFT — the seller flow's entry point, called when the catalog photo is chosen.
+ *
+ * The body is usually empty: the wizard collects the title, price and stock after Agent 1 and
+ * Agent 2 have run (listingCreateSchema defaults them). The row is created now regardless because
+ * the agents write their checks, images and challenge claims against its id.
+ */
 export async function POST(req: Request) {
   try {
     const user = await requireRole("seller");
-    const parsed = listingCreateSchema.safeParse(await req.json());
-    if (!parsed.success) return fail(400, "invalid_body", "Title (3–120), integer price (1–100000) and a valid category are required.");
+    const parsed = listingCreateSchema.safeParse(await req.json().catch(() => ({})));
+    if (!parsed.success) return fail(400, "invalid_body", "Title (≤120), integer price (1–100000) and a valid category are required.");
     const repo = await repoReady();
     const listing = await repo.createListing({
       sellerId: user.sellerId!,
