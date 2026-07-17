@@ -1,25 +1,13 @@
-// Seller portal shell. Middleware already gates /seller on a valid session; every page and route
-// underneath re-checks the role server-side (defense in depth, CLAUDE.md §11).
-import Link from "next/link";
+// Seller portal shell, and the ROLE GUARD for every /seller/* page.
+//
+// Middleware only proves a session exists; requireSeller re-reads the role (and the seller row) from
+// the database on each request, so a buyer who types a seller URL lands on their own home and a
+// seller whose onboarding never finished lands on /onboarding instead of a page with nothing to show.
 import type { ReactNode } from "react";
-import { SellerNav } from "@/features/seller/SellerNav";
+import { requireSeller } from "@/lib/guards";
+import { PortalShell } from "@/components/nav/PortalShell";
 
-export default function SellerLayout({ children }: { children: ReactNode }) {
-  return (
-    <div className="mx-auto max-w-5xl px-4 py-8">
-      <header className="mb-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-black tracking-tight">Seller portal</h1>
-            <p className="text-sm text-white/40">Your listings, your numbers, your trust record.</p>
-          </div>
-          <Link href="/sell" className="btn-primary">
-            Create listing →
-          </Link>
-        </div>
-        <SellerNav />
-      </header>
-      {children}
-    </div>
-  );
+export default async function SellerLayout({ children }: { children: ReactNode }) {
+  await requireSeller();
+  return <PortalShell role="seller">{children}</PortalShell>;
 }

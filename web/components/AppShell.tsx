@@ -4,16 +4,16 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
-import { LogOut, Volume2, VolumeX } from "lucide-react";
+import { Volume2, VolumeX } from "lucide-react";
 import { LanguageToggle } from "@/components/ui/LanguageToggle";
 import { PersonaSwitcher } from "@/components/ui/PersonaSwitcher";
+import { UserMenu } from "@/components/nav/UserMenu";
 import { useT } from "@/lib/i18n";
 import { useLocaleStore, useSessionStore, useUiStore } from "@/lib/store";
+import { ROLE_HOME } from "@/lib/roles";
 import { stopSpeaking } from "@/lib/voice";
 import type { Role } from "@/lib/db/types";
 import type { ReactNode } from "react";
-
-const roleHome: Record<Role, string> = { seller: "/sell", buyer: "/shop", admin: "/admin" };
 
 export function AppShell({ children }: { children: ReactNode }) {
   const t = useT();
@@ -35,7 +35,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       if (!res.ok) return;
       const body = (await res.json()) as { user: { role: Role; name: string; sellerId?: string } };
       setUser({ ...user, role: body.user.role, sellerId: body.user.sellerId });
-      router.push(roleHome[role]);
+      router.push(ROLE_HOME[role]);
     } catch {
       // network hiccup — stay on current persona
     }
@@ -73,14 +73,11 @@ export function AppShell({ children }: { children: ReactNode }) {
               {voiceOn ? <Volume2 className="h-4 w-4" aria-hidden /> : <VolumeX className="h-4 w-4" aria-hidden />}
             </button>
             {status === "authed" && user ? (
-              <a
-                href="/api/auth/logout"
-                aria-label={t("nav.signout")}
-                className="flex min-h-[36px] items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-white/70 transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-asli-violet"
-              >
-                <span className="hidden max-w-[10ch] truncate sm:inline">{user.name}</span>
-                <LogOut className="h-3.5 w-3.5" aria-hidden />
-              </a>
+              <UserMenu
+                name={user.name}
+                role={user.role}
+                onSwitchPersona={(r) => void switchPersona(r)}
+              />
             ) : status === "anon" ? (
               <Link
                 href="/login"

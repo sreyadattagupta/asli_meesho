@@ -10,12 +10,19 @@ const personas: { role: Role; label: string; icon: typeof Store }[] = [
   { role: "admin", label: "Admin", icon: ShieldHalf },
 ];
 
-/** Labelled demo convenience — judges hop personas in one click (prod would gate roles). */
+/**
+ * Labelled demo convenience — judges hop personas in one click (prod would gate roles).
+ *
+ * Hidden below `sm`, where it moves into the account menu instead. At 390px the header cannot hold
+ * the wordmark, this group, the language and voice toggles AND the account menu without pushing the
+ * page into a horizontal scroll — and a phone is the device Meesho is built for, so the page wins
+ * and the demo control moves rather than being dropped.
+ */
 export function PersonaSwitcher({ current, onSwitch }: {
   current: Role; onSwitch: (r: Role) => void;
 }) {
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="hidden items-center gap-1.5 sm:flex">
       <span className="rounded-full bg-asli-amber/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-asli-amber">
         demo
       </span>
