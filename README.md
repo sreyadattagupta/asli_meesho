@@ -2,11 +2,13 @@
 
 <!-- TODO: replace with an exported logo (suggested: docs/assets/logo.png, ~320px wide) -->
 
-# असली Asli
+# असली **Asli**
 
-### Proof at the point of listing — a multi-agent trust layer for Meesho
+### 🛡️ Proof at the point of listing — a multi-agent trust layer for Meesho
 
-**A seller cannot publish until they prove they physically hold the product, and that the size chart was measured rather than guessed.**
+**Stop bad listings _before_ they go live.**
+
+A seller can't publish until they prove — on camera, in seconds — that they **physically hold** the product and that the size chart was **measured, not guessed**.
 
 [![Live Demo](https://img.shields.io/badge/Live_Demo-asli--meesho.vercel.app-22C55E?style=for-the-badge&logo=vercel&logoColor=white)](https://asli-meesho.vercel.app)
 [![CV Service](https://img.shields.io/badge/CV_Service-Cloud_Run-4285F4?style=for-the-badge&logo=googlecloud&logoColor=white)](https://asli-meesho-vlm-287402258660.us-central1.run.app/health)
@@ -27,6 +29,43 @@
 Built for **Meesho ScriptedBy{Her} 2.0 — Round 3**
 
 </div>
+
+---
+
+## 🧵 What is Asli?
+
+Two problems drive most of Meesho's fashion returns — **"not as pictured"** and **wrong size** — and both are born the instant a listing is published, not at delivery where they're merely discovered. Asli moves the check **upstream to the moment of listing**: a small team of AI agents makes every seller *prove possession* and *prove real measurements* before a product can ever reach a buyer.
+
+> **Prevention, not detection.** Asli complements Meesho's **Project Suraksha** — Suraksha removes what's already live; Asli stops it *reaching* live. It is deliberately **not** counterfeit detection.
+
+### ⚡ How it works — in one glance
+
+<div align="center">
+
+`📸 Upload photo` → `🔍 Reverse-image trigger` → `🔑 Prove possession` → `📏 Measure the size` → `✅ Asli Verified` → `🛒 Ranked first`
+
+</div>
+
+A downloaded catalog photo **cannot** answer the possession challenge. Someone holding the real product answers it in **~8 seconds**. That asymmetry is the whole design.
+
+---
+
+## 🤖 Meet the agents
+
+Behind the flow, an **orchestrator** routes each listing by risk to specialist agents, then a **Decision Engine** owns one final, *explainable* trust score. Every agent has exactly one job:
+
+| | Agent | Its job — in plain terms | Powered by |
+|:--:|---|---|---|
+| 🔑 | **Agent 1 · Possession-Proof** ★ | *"Do you actually have this?"* — matches the live capture against the catalog photo and checks that a single-use code is visible and freshly shot. | **Real models** — SigLIP / CLIP embeddings + a VLM cross-check |
+| 📏 | **Agent 2 · Smart Sizing** | *"Is the size real?"* — measures chest / waist / length in **centimetres** from a flat-lay beside an A4 sheet: geometry you can verify, not a guess. | **Real CV** — single-view homography |
+| 🛰️ | **Agent 3 · Risk Radar** | *"How much should we trust this seller?"* — turns history, KYC and image-reuse into a trust band, so trusted sellers earn a fast lane. | Deterministic engine over persisted signals |
+| 📦 | **Agent 4 · Promise Keeper** | *"Did it arrive as promised?"* — freezes the listing's promises at go-live and checks them against the delivery photo. | Simulation over persisted state |
+| ⚖️ | **★ Decision Engine** | Composes every signal into the final verdict — **approve, re-challenge, or escalate to a human** — always with a reason. Never a silent yes/no. | **Real** — a pure, fully unit-tested function |
+
+**`✓ Asli Verified` requires Agent 1 _and_ Agent 2 to pass.** Nothing ever auto-blocks an honest seller: a mismatch always earns a fresh code, and only genuinely ambiguous cases reach a human reviewer.
+
+> 🟢 Agents **1 & 2 are real models end-to-end.** Agents **3 & 4 are honest working simulations** — real code, real persisted state, real explainable output — standing in for data Meesho already owns (a seller-history DB, a logistics API). They're clearly labelled `simulated` in the UI.
+> 📐 Want the internals — thresholds, calibration, the retry state machine? Jump to **[§4 · AI agent architecture](#4-ai-agent-architecture)**.
 
 ---
 
