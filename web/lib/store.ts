@@ -93,6 +93,10 @@ interface SellerStore {
   // human-in-the-loop approval gate (step 5)
   approved?: boolean;
 
+  // Set when the seller chose "Continue anyway" past a failing possession challenge. The listing
+  // proceeds but is NOT ✓ Asli Verified — the go-live screen reflects the honest state.
+  possessionUnverified?: boolean;
+
   setStep: (step: FlowStep) => void;
   setOwnerKey: (key: string) => void;
   setListingId: (id: string) => void;
@@ -111,6 +115,7 @@ interface SellerStore {
   setSizeChart: (c: SizeChart | undefined) => void;
   setDeclaredSize: (s: string | undefined) => void;
   setApproved: (approved: boolean) => void;
+  setPossessionUnverified: (v: boolean) => void;
   reset: () => void;
 }
 
@@ -270,6 +275,7 @@ export const useSellerStore = create<SellerStore>()(
   setSizeChart: (sizeChart) => set({ sizeChart }),
   setDeclaredSize: (declaredSize) => set({ declaredSize }),
   setApproved: (approved) => set({ approved }),
+  setPossessionUnverified: (possessionUnverified) => set({ possessionUnverified }),
   reset: () => {
     const c = get().catalogPreview;
     if (c && c.startsWith("blob:")) URL.revokeObjectURL(c);
@@ -292,6 +298,7 @@ export const useSellerStore = create<SellerStore>()(
       measureResult: undefined,
       sizeChart: undefined,
       approved: undefined,
+      possessionUnverified: undefined,
     });
   },
     }),

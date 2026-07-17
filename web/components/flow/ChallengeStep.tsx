@@ -46,9 +46,42 @@ export default function ChallengeStep() {
   const [photo, setPhoto] = useState<CapturedPhoto | null>(null);
   const [typedCode, setTypedCode] = useState("");
   const [busy, setBusy] = useState(false);
+  const [continuing, setContinuing] = useState(false);
   const [remaining, setRemaining] = useState<number>(0);
   const [note, setNote] = useState<string | null>(null);
   const [checks, setChecks] = useState(IDLE_CHECKS);
+
+  // After two failed attempts the seller shouldn't be trapped by a gate that can't confirm a genuine
+  // product. They may Retake Again, or continue to Agent 2 — recorded as UNVERIFIED possession, which
+  // publishes without the ✓ badge and lands in the review queue (never a silent pass).
+  const canContinueUnverified = attempt >= 2;
+
+  async function continueUnverified() {
+    setContinuing(true);
+    try {
+      const { listingId } = useSellerStore.getState();
+      if (listingId) {
+        const res = await fetch("/api/asli/continue-unverified", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ listingId }),
+        });
+        if (!res.ok) {
+          const b = await res.json().catch(() => null);
+          setNote(b?.error?.message ?? "Couldn't continue — retry.");
+          return;
+        }
+      }
+      // Advance to Agent 2. Possession stays unverified (server-recorded when a listing exists); the
+      // flag drives the honest "unverified" go-live screen.
+      useSellerStore.getState().setPossessionUnverified(true);
+      useSellerStore.getState().setStep("sizing");
+    } catch {
+      setNote("Network hiccup — retry.");
+    } finally {
+      setContinuing(false);
+    }
+  }
 
   // Camera path: seller types the code manually. Demo path: the fixture hands back the code to
   // type (`demoCode`) so the genuine / thief / wrong-code scenarios each drive the real path.
@@ -270,6 +303,37 @@ export default function ChallengeStep() {
         <p className="mt-4 rounded-lg bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
           {note}
         </p>
+      )}
+
+      {/* Two-strikes escape hatch: after the challenge keeps failing, offer to continue unverified
+          rather than trap a genuine seller. Clearly warned; publishes without the ✓ badge + review. */}
+      {canContinueUnverified && (
+        <div className="mt-4 rounded-xl border border-amber-500/25 bg-amber-500/[0.06] p-4">
+          <p className="text-sm font-semibold text-amber-200">{t("flow.challenge.continueTitle")}</p>
+          <p className="mt-1 text-xs leading-relaxed text-amber-100/70">
+            {t("flow.challenge.continueWarning")}
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              className="btn-ghost min-h-[44px]"
+              onClick={() => {
+                setPhoto(null);
+                setTypedCode("");
+                setNote(null);
+              }}
+              disabled={busy || continuing}
+            >
+              {t("flow.challenge.retakeAgain")}
+            </button>
+            <button
+              className="min-h-[44px] rounded-xl border border-amber-500/40 bg-amber-500/15 px-4 py-2 text-sm font-semibold text-amber-100 transition hover:bg-amber-500/25 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+              onClick={() => void continueUnverified()}
+              disabled={busy || continuing}
+            >
+              {continuing ? t("flow.challenge.continuing") : t("flow.challenge.continueBtn")}
+            </button>
+          </div>
+        </div>
       )}
 
       {/* Stuck here? Save the draft and come back to it, or start a fresh listing — the possession

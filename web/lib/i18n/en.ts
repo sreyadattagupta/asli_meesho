@@ -77,6 +77,11 @@ export const en = {
   "flow.challenge.singleUse": "Single-use · attempt {a}",
   "flow.challenge.newCode": "Get a new code",
   "flow.challenge.retake": "Retake",
+  "flow.challenge.continueTitle": "Still not matching?",
+  "flow.challenge.continueWarning": "We couldn't confidently verify that this photo matches your uploaded product. You can continue with the listing, but this challenge will be marked incomplete — the listing won't get the ✓ Asli Verified badge and will need a manual review, which may affect its visibility.",
+  "flow.challenge.retakeAgain": "Retake again",
+  "flow.challenge.continueBtn": "Continue anyway →",
+  "flow.challenge.continuing": "Continuing…",
   "flow.challenge.verify": "Verify possession →",
   "flow.challenge.verifying": "AI verifying…",
   "flow.challenge.checkProduct": "Checking product",
@@ -215,6 +220,10 @@ export const en = {
   "flow.result.products": "View in my products →",
   "flow.result.another": "List another product",
   "flow.result.voice": "Congratulations! Your listing is live and Asli Verified.",
+  "flow.result.unverifiedPill": "Live · unverified",
+  "flow.result.unverifiedTitle": "Your listing is live",
+  "flow.result.unverifiedSubtitle": "Possession couldn't be confirmed, so this listing isn't ✓ Asli Verified yet. It's live but flagged for review — a reviewer can verify it later, and until then it ranks below verified listings.",
+  "flow.result.unverifiedVoice": "Your listing is live, but it isn't verified yet — it's been sent for review.",
 } as const;
 
 export type I18nKey = keyof typeof en;

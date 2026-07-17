@@ -21,6 +21,8 @@ vi.mock("@/lib/auth", async () => {
 
 import { GET as ISSUE_CODE, POST as VERIFY } from "@/app/api/challenge/route";
 import { POST as ANALYZE } from "@/app/api/asli/analyze/route";
+import { POST as CONTINUE_UNVERIFIED } from "@/app/api/asli/continue-unverified/route";
+import { POST as PUBLISH } from "@/app/api/listings/[id]/publish/route";
 import { POST as CREATE_ORDER } from "@/app/api/orders/route";
 import { POST as ADVANCE } from "@/app/api/orders/[id]/advance/route";
 import { POST as PROMISE_CHECK } from "@/app/api/agents/promise-keeper/check/route";
@@ -90,6 +92,63 @@ describe("agentic flows", () => {
     const decision = await (await json(ANALYZE, { listingId: listing.id })).json();
     expect(decision.action).toBe("ESCALATE_HUMAN");
     expect((await repo.getListing(listing.id))!.status).toBe("escalated");
+  });
+
+  it("continue-anyway records unverified possession + a pending review, and publishes UNVERIFIED", async () => {
+    const { listing } = await newSellerListing();
+    const repo = await repoReady();
+    // Give it a title so the publish completeness gate isn't what we're testing.
+    await repo.updateListing(listing.id, { title: "Continued Kurti" });
+
+    // Seller hits "Continue anyway" after the challenge kept failing.
+    const cr = await json(CONTINUE_UNVERIFIED, { listingId: listing.id });
+    expect(cr.status).toBe(200);
+    const checks = await repo.listChecks(listing.id);
+    const cont = checks.find((c) => c.agent === "possession" && c.payload["user_continued"]);
+    expect(cont).toBeTruthy();
+    expect((await repo.listPendingReviews()).some((r) => r.listingId === listing.id)).toBe(true);
+
+    // It can now publish — but LIVE and NOT verified (no badge, no rank boost).
+    const pub = await PUBLISH(
+      new Request("http://x", { method: "POST", body: JSON.stringify({}) }),
+      { params: Promise.resolve({ id: listing.id }) },
+    );
+    expect(pub.status).toBe(200);
+    const after = (await repo.getListing(listing.id))!;
+    expect(after.status).toBe("live");
+    expect(after.verified).toBe(false); // ✓ Asli Verified still means real possession
+    expect(after.rankBoost).toBe(0);
+  });
+
+  it("publish with NO possession (neither passed nor continued) is refused", async () => {
+    const { listing } = await newSellerListing();
+    const repo = await repoReady();
+    await repo.updateListing(listing.id, { title: "Untried Kurti" });
+    const pub = await PUBLISH(
+      new Request("http://x", { method: "POST", body: JSON.stringify({}) }),
+      { params: Promise.resolve({ id: listing.id }) },
+    );
+    expect(pub.status).toBe(409);
+    expect((await pub.json()).error.code).toBe("not_verified");
+  });
+
+  it("a passing possession still publishes VERIFIED", async () => {
+    const { listing } = await newSellerListing();
+    const repo = await repoReady();
+    await repo.updateListing(listing.id, { title: "Verified Kurti" });
+    await repo.addCheck({
+      listingId: listing.id, agent: "possession",
+      payload: { passed: true, same_item: true, code_visible: true },
+      confidence: 0.9, action: "AUTO_APPROVE", requiredConfidence: 0.78, reason: "match",
+    });
+    const pub = await PUBLISH(
+      new Request("http://x", { method: "POST", body: JSON.stringify({}) }),
+      { params: Promise.resolve({ id: listing.id }) },
+    );
+    expect(pub.status).toBe(200);
+    const after = (await repo.getListing(listing.id))!;
+    expect(after.verified).toBe(true);
+    expect(after.rankBoost).toBe(1);
   });
 
   it("commerce: order → advance×2 → Promise Keeper verdict persisted", async () => {

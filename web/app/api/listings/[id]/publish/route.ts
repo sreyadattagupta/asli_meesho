@@ -31,15 +31,31 @@ export async function POST(
       return fail(409, "incomplete", "Add a product title before publishing.");
     }
 
-    // ✓ Asli Verified requires a passing possession check (Agent 1 ∧ Agent 2 upstream).
+    // ✓ Asli Verified requires a PASSING possession check (Agent 1 ∧ Agent 2 upstream). A seller who
+    // hit "Continue anyway" after the challenge couldn't be confirmed has a user_continued check
+    // instead: that listing may go live but is NOT verified and is left flagged for review. A listing
+    // with neither still can't publish.
     const checks = await repo.listChecks(id);
-    const passed = checks.some((c) => c.agent === "possession" && Boolean(c.payload["passed"]));
-    if (!passed) return fail(409, "not_verified", "Possession has not been proven for this listing.");
+    const possession = checks.filter((c) => c.agent === "possession");
+    const passed = possession.some((c) => Boolean(c.payload["passed"]));
+    const userContinued = possession.some((c) => Boolean(c.payload["user_continued"]));
+    if (!passed && !userContinued) {
+      return fail(409, "not_verified", "Possession has not been proven for this listing.");
+    }
+    const verified = passed; // continue-anyway ⇒ live but unverified
 
     const updated = await repo.updateListing(id, {
-      status: "live", verified: true, flowStep: "live", rankBoost: 1,
+      // Unverified go-live keeps no rank boost and no badge — the marketplace already ranks it below
+      // verified listings and shows the subtler state.
+      status: "live", verified, flowStep: "live", rankBoost: verified ? 1 : 0,
       ...(parsed.data.sizeChart ? { sizeChart: parsed.data.sizeChart } : {}),
     });
+    // An unverified go-live must be in the review queue so a human can confirm possession later. The
+    // continue-unverified route already created one; this backstops the direct-publish path.
+    if (!verified) {
+      const pending = (await repo.listPendingReviews()).some((r) => r.listingId === id);
+      if (!pending) await repo.createReview({ listingId: id, status: "pending" });
+    }
     const images = await repo.listImages(id);
     await repo.upsertPromise({
       listingId: id,
@@ -53,7 +69,7 @@ export async function POST(
     });
     await repo.appendAudit({
       listingId: id, actor: user.id, event: "listing_published",
-      data: { verified: true, promiseFrozen: true },
+      data: { verified, promiseFrozen: true, possession: passed ? "passed" : "user_continued" },
     });
     return ok({ listing: updated });
   } catch (e) {
