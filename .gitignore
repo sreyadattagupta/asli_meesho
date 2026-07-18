@@ -19,3 +19,8 @@ test-results/
 /live_other.png
 /live_same.jpeg
 
+# Screenshots
+snapshots/
+
+# Demo videos
+*.mp4
