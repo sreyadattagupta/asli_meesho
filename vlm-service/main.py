@@ -769,27 +769,44 @@ async def vlm_verify_delivery(
     catalog_bytes = await _read(catalog, "catalog")
 
     sim = cv.similarity(catalog_bytes, delivery_bytes)  # {score, method}
+
+    # The VLM only DESCRIBES the parcel; the image comparison above decides identity. So a VLM that
+    # is down, over quota, or returning malformed JSON leaves us with a weaker answer, not no answer
+    # — it used to 502 the buyer's check outright, after the images had already been compared.
+    observed = {}
+    vlm_same = False
+    vlm_ok = False
     try:
         obs = await vlm_backend.run_vlm(
             prompts.delivery_prompt(title, category), images=[catalog_bytes, delivery_bytes]
         )
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(502, f"VLM error: {e}") from e
+        observed = obs.get("observed") if isinstance(obs.get("observed"), dict) else {}
+        vlm_same = bool(obs.get("same_product"))
+        vlm_ok = True
+    except Exception:  # noqa: BLE001 — attribute read is optional; identity is decided above
+        pass
 
-    observed = obs.get("observed") if isinstance(obs.get("observed"), dict) else {}
-    vlm_same = bool(obs.get("same_product"))
-    if sim["method"] == "clip":
-        # CLIP rates same-category items highly, so a high cosine alone isn't "same product": require
-        # a near-duplicate (≥MATCH_HI) OR strong similarity (≥MATCH_THRESHOLD) confirmed by the VLM.
-        same_product = bool(sim["score"] >= MATCH_HI or (sim["score"] >= MATCH_THRESHOLD and vlm_same))
-    else:
-        same_product = vlm_same  # phash unreliable for same-product across angles → trust the VLM
+    # Near-duplicate is same-product on ANY backend: if the pixels essentially agree, no second
+    # opinion can make them a different item. Below that bar the VLM may CONFIRM a strong match, but
+    # it is never the sole judge — a malformed reply was reporting byte-identical photos as a
+    # mismatch, because phash handed it the whole decision.
+    same_product = bool(sim["score"] >= MATCH_HI or (sim["score"] >= MATCH_THRESHOLD and vlm_same))
 
-    obs_cat = observed.get("category") or category
-    cat_ok = bool(_norm(obs_cat) and _norm(category) and (
+    # Only compare a category the VLM actually READ. The old fallback `observed.category or category`
+    # compared the promise with itself when the read was missing, which scored as agreement on a good
+    # day and as a mismatch on a bad one — either way it was not evidence.
+    obs_cat = observed.get("category")
+    cat_read = bool(_norm(obs_cat or "") and _norm(category))
+    cat_ok = bool(cat_read and (
         _norm(obs_cat) == _norm(category)
         or _norm(category) in _norm(obs_cat) or _norm(obs_cat) in _norm(category)))
-    attr_agreement = ((1.0 if same_product else 0.0) + (1.0 if cat_ok else 0.0)) / 2.0
+
+    # Average only over the attributes we have. With the VLM down that is identity alone, instead of
+    # an unread category silently halving the confidence.
+    parts = [1.0 if same_product else 0.0]
+    if cat_read:
+        parts.append(1.0 if cat_ok else 0.0)
+    attr_agreement = sum(parts) / len(parts)
     confidence = calibration.delivery_confidence(sim["score"], attr_agreement)
 
     return {
@@ -801,8 +818,10 @@ async def vlm_verify_delivery(
             "color": observed.get("color"),
         },
         "reason": (
-            f"Same-product {sim['method']} {sim['score']:.2f}; "
-            f"category {'match' if cat_ok else 'differs'}."
+            f"Same-product {sim['method']} {sim['score']:.2f}"
+            + (f"; category {'match' if cat_ok else 'differs'}" if cat_read else "")
+            + ("" if vlm_ok else "; attribute read unavailable")
+            + "."
         ),
         "method": sim["method"],
         "confidence": confidence,

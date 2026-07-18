@@ -144,9 +144,8 @@ function failRetakeMeasure(): MeasureResult {
 }
 
 /** Wrap a provider: on error retry once, then degrade. match() FAILS CLOSED (never auto-passes);
- *  the non-security calls (measure/verifyDelivery) degrade to the labelled Mock. */
+ *  measure asks for a retake; verifyDelivery reports UNAVAILABLE rather than guessing. */
 export function withDegradation(p: VlmProvider): VlmProvider {
-  const fallback = new MockProvider();
   async function guard<T>(primary: () => Promise<T>, onFail: () => Promise<T>): Promise<T> {
     try {
       return await primary();
@@ -165,8 +164,14 @@ export function withDegradation(p: VlmProvider): VlmProvider {
     match: (c, l, code) => guard(() => p.match(c, l, code), async () => failClosedMatch()),
     // Sizing: fail to a RETAKE — never a fabricated size (was the hardcoded 96/118/88 → XXXL bug).
     measure: (f, r) => guard(() => p.measure(f, r), async () => failRetakeMeasure()),
+    // Delivery: with the service down, NOTHING compared the photos, so there is no verdict to give.
+    // Rethrowing lets the caller record "not checked yet". The Mock used to stand in here and decided
+    // same-product by comparing FILE SIZES — a buyer's own photo of the right item is a different
+    // size from the catalog, so it was reported as a mismatch and cost the seller trust score.
     verifyDelivery: (d, c, pr) =>
-      guard(() => p.verifyDelivery(d, c, pr), () => fallback.verifyDelivery(d, c, pr)),
+      guard(() => p.verifyDelivery(d, c, pr), () => {
+        throw new Error("delivery verification unavailable");
+      }),
   };
 }
 
