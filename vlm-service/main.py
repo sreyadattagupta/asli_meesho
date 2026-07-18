@@ -322,6 +322,7 @@ async def health():
                          if promise_embed.available() else None,
             "artifact_threshold": promise_embed.threshold(),  # provenance: the learned Hub bar
             "load_error": promise_embed.load_error(),
+            "sync_error": promise_embed.sync_error(),  # why the Hub pull failed, if it did
         },
         "ocr_available": ocr.available(),
         "garment_type_model": {         # Agent-2 fine-tuned garment-type classifier (Colab-trained, HF Hub)

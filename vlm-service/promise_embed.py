@@ -59,6 +59,10 @@ _input_name: Optional[str] = None
 _output_name: Optional[str] = None
 _load_error: Optional[str] = None
 _threshold: Optional[float] = None
+# Why the last Hub sync failed. Swallowing this was a mistake: the first deploy reported only "model
+# file absent", which is indistinguishable between a download that is still running and one that
+# cannot succeed, so there was nothing to debug from.
+_sync_error: Optional[str] = None
 
 
 def _sync_from_hub() -> None:
@@ -66,6 +70,7 @@ def _sync_from_hub() -> None:
     Silent on failure — the serving path keeps working via the legacy cascade. Syncing the calibration
     too keeps the same-product BAR data-driven (the learned gate_threshold), not a hand-set env number.
     """
+    global _sync_error
     repo = os.getenv("PROMISE_HF_REPO")
     if not repo:
         return
@@ -73,17 +78,22 @@ def _sync_from_hub() -> None:
 
     from huggingface_hub import hf_hub_download
 
-    _MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        _MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
+    except Exception as e:  # noqa: BLE001 — e.g. a read-only image layer
+        _sync_error = f"mkdir {_MODEL_PATH.parent}: {type(e).__name__}: {e}"
+        return
     for fname, dst in (("model.onnx", _MODEL_PATH), ("promise_calibration.json", _CAL_PATH)):
         if dst.exists():
             continue
         try:
             p = hf_hub_download(repo_id=repo, filename=fname, repo_type="model",
                                 revision=os.getenv("PROMISE_HF_REVISION", "main"),
-                                token=os.getenv("HF_TOKEN"))
+                                token=os.getenv("HF_TOKEN"),
+                                cache_dir=os.getenv("HF_HOME") or None)
             shutil.copyfile(p, dst)
-        except Exception:  # noqa: BLE001 — model must sync; calibration is best-effort (bar falls back)
-            pass
+        except Exception as e:  # noqa: BLE001 — degrade, but SAY WHY (health surfaces sync_error)
+            _sync_error = f"{fname}: {type(e).__name__}: {e}"
 
 
 def _load():
@@ -101,8 +111,13 @@ def _load():
         if not _MODEL_PATH.exists():
             # Absent is TRANSIENT (a cold-start Hub sync may not have run/finished) — record but DO NOT
             # cache as a permanent error, so the next call (or the startup warmup) retries the sync.
+            # In the serving image HF_HUB_OFFLINE=1 blocks Hub access, so the model is BAKED at build
+            # time (see Dockerfile) and a missing file means the bake step did not run — say that,
+            # rather than promising a retry that cannot happen.
+            offline = os.getenv("HF_HUB_OFFLINE") in ("1", "true", "True")
             _load_error = (f"model file absent at {_MODEL_PATH}"
-                           + (" (PROMISE_HF_REPO set — will retry sync)" if os.getenv("PROMISE_HF_REPO")
+                           + (" (HF_HUB_OFFLINE=1 — must be baked into the image at build)" if offline
+                              else " (PROMISE_HF_REPO set — will retry sync)" if os.getenv("PROMISE_HF_REPO")
                               else " (no PROMISE_HF_REPO)"))
             return
         import onnxruntime as ort
@@ -133,6 +148,12 @@ def available() -> bool:
 def load_error() -> Optional[str]:
     _load()
     return _load_error
+
+
+def sync_error() -> Optional[str]:
+    """Why the Hub pull failed, if it did — surfaced on /health so an absent model is diagnosable."""
+    _load()
+    return _sync_error
 
 
 def threshold() -> Optional[float]:

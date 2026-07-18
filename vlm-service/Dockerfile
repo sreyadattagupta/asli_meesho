@@ -55,6 +55,18 @@ RUN python -c "from huggingface_hub import snapshot_download; snapshot_download(
     && rm -rf /tmp/garment \
     && ls -la models/garment-dinov2 models/garment_calibration.json
 
+# Agent-4 PRIMARY delivery matcher — DINOv2-small fine-tuned on catalog↔parcel pairs, baked at the
+# exact paths promise_embed.py reads, for the same reason as the block above: HF_HUB_OFFLINE=1 blocks
+# runtime Hub access, so a runtime sync silently never completes and the delivery check falls back to
+# the phash floor — which scores a genuine same-item pair at 0.59 against a 0.72 bar, i.e. it accuses
+# honest sellers. model.onnx → models/promise-dinov2/; the LEARNED bar → models/promise_calibration.json.
+RUN python -c "from huggingface_hub import snapshot_download; snapshot_download('dsreya/promise-dinov2', local_dir='/tmp/promise')" \
+    && mkdir -p models/promise-dinov2 \
+    && cp /tmp/promise/model.onnx models/promise-dinov2/model.onnx \
+    && cp /tmp/promise/promise_calibration.json models/promise_calibration.json \
+    && rm -rf /tmp/promise \
+    && ls -la models/promise-dinov2 models/promise_calibration.json
+
 # Pre-download the torch HF models into the image cache at BUILD time so runtime cold-starts NEVER hit
 # the HF Hub (was causing slow starts + rate-limit 429s). HF_HUB_OFFLINE then loads them from the baked
 # cache — fast, deterministic, no network dependency to serve. HF_HOME pins the cache so the build
