@@ -33,7 +33,11 @@ def _ensure_loaded() -> bool:
             from transformers import pipeline
 
             log.info("garment-type: loading %s from the Hugging Face Hub …", MODEL_ID)
-            _state["pipe"] = pipeline("image-classification", model=MODEL_ID)
+            # device_map="cpu" (accelerate) materialises the ViT weights directly onto CPU, shard by
+            # shard — same root fix as siglip_embed: under the concurrent 12Gi load this classifier was
+            # intermittently left on `meta` ("Cannot copy out of meta tensor"), which killed Agent-2's
+            # trained garment-type read. Streaming placement cuts peak RAM and never touches meta.
+            _state["pipe"] = pipeline("image-classification", model=MODEL_ID, device_map="cpu")
             _state["ok"] = True
             log.info("garment-type: %s ready.", MODEL_ID)
         except Exception as e:  # noqa: BLE001 — degrade to the VLM read, never crash

@@ -22,13 +22,16 @@ RUN pip install --no-cache-dir -r requirements.txt \
 # which silently broke SigLIP + SegFormer loading on a build that resolved to 5.x. Pin torch too so
 # builds are reproducible (unpinned deps drifted between deploys and OOMed/ImportError'd at runtime).
 RUN pip install --no-cache-dir torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cpu \
-    && pip install --no-cache-dir "transformers>=4.44,<5" "safetensors>=0.4" "sentencepiece>=0.2"
+    && pip install --no-cache-dir "transformers>=4.44,<5" "safetensors>=0.4" "sentencepiece>=0.2" "accelerate>=0.34"
+# accelerate is REQUIRED for from_pretrained(device_map="cpu") in siglip_embed.py / garment_type.py —
+# it streams weights shard-by-shard onto CPU, which fixed the intermittent `meta`-tensor load failures
+# (SigLIP + garment-type going ok:false) when all three torch models materialised near the 12Gi ceiling.
 
 # Cache-bust the source COPY. A `gcloud run deploy --source` build reused a stale COPY layer once
 # (a code change to main.py shipped but the running image still had the old file), so pin the layer
 # to a value that changes per meaningful deploy — this forces the source below to rebuild fresh while
 # the heavy pip layers above stay cached.
-ARG SOURCE_REV=agent1-siglip-vlm-rescue
+ARG SOURCE_REV=garment-bar-0.70-devicemap-cpu
 RUN echo "source rev: ${SOURCE_REV}"
 COPY . .
 

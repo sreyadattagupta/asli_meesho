@@ -291,8 +291,10 @@ async def health():
             "garment": {                 # PRIMARY when present: fine-tuned DINOv2 matcher (Track B)
                 "model": garment_embed.model_id(),
                 "available": garment_embed.available(),
-                "threshold": (garment_embed.threshold() or GARMENT_THRESHOLD)
-                if garment_embed.available() else None,
+                # EFFECTIVE decision bar (env-overridable resolver), not the raw Hub artifact value —
+                # matches what the /vlm/match cascade actually compares against.
+                "threshold": GARMENT_THRESHOLD if garment_embed.available() else None,
+                "artifact_threshold": garment_embed.threshold(),  # provenance: the learned Hub bar
                 "load_error": garment_embed.load_error(),
             },
             "siglip": {                  # Live-Proof gate (HF Hub, loaded once at startup)
@@ -411,9 +413,15 @@ async def vlm_match(
             eg_l = garment_embed.embed(seg_liv["bytes"])
             if eg_c is not None and eg_l is not None:
                 garment_cos = round(garment_embed.cosine(eg_c, eg_l), 4)
-                # Bar = the LEARNED gate_threshold from the Hub-synced calibration (data-driven), with
-                # the env/default only as a fallback when the calibration didn't sync.
-                gbar = garment_embed.threshold() or GARMENT_THRESHOLD
+                # Bar via the single env-overridable resolver (GARMENT_THRESHOLD = env → Hub-synced
+                # calibration → default), NOT garment_embed.threshold() directly: the Hub artifact's
+                # learned 0.8746 was fitted on DeepFashion In-shop, whose positives are studio
+                # front/side/back poses — an EASIER gap than a real Meesho catalog-vs-flat-lay pair. On
+                # the real fixtures that bar over-rejects the honest seller (genuine pair scores 0.804,
+                # a look-alike different dress 0.279), so the true operating point is set by env
+                # (GARMENT_THRESHOLD=0.70: clears genuine by +0.10, rejects the different item by 0.42).
+                # Permanent fix = re-fit the Hub calibration on real catalog-vs-live pairs; env is the bar.
+                gbar = GARMENT_THRESHOLD
                 same = bool(garment_cos >= gbar)
                 gate_score = garment_cos
                 method = "garment-dinov2"

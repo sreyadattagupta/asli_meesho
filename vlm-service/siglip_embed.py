@@ -44,13 +44,16 @@ def _ensure_loaded() -> bool:
                 proc = AutoImageProcessor.from_pretrained(MODEL_ID)
             except Exception:  # noqa: BLE001 — torchvision missing → slow processor is equivalent here
                 proc = AutoImageProcessor.from_pretrained(MODEL_ID, use_fast=False)
-            # low_cpu_mem_usage=False FORCES full weight materialisation on load. The default (True on
-            # recent transformers) inits on the `meta` device and lazily materialises — which, alongside
-            # the other baked models, left SigLIP tensors on `meta` and the forward raised
-            # "Tensor on device meta is not on the expected device cpu!" (seen in Cloud Run logs). Pin
-            # float32 + an explicit .to("cpu") so no parameter can remain on meta.
+            # device_map="cpu" (accelerate) dispatches the weights shard-by-shard DIRECTLY onto CPU.
+            # This is the root fix for two coupled Cloud Run failures seen in the logs: (1) the three
+            # torch models loading near the 12Gi ceiling left SigLIP tensors on `meta` (a low-memory
+            # partial materialisation) so the forward raised "Tensor on device meta is not on the
+            # expected device cpu!", and (2) the previous `.eval().to("cpu")` remedy then raised
+            # "Cannot copy out of meta tensor; use to_empty()" at load. device_map streams each shard to
+            # its final CPU home (lower peak RAM) and never routes through a meta→cpu copy — so nothing
+            # can remain on meta, and there is NO trailing .to() (device_map already placed everything).
             model = AutoModel.from_pretrained(
-                MODEL_ID, low_cpu_mem_usage=False, torch_dtype=torch.float32).eval().to("cpu")
+                MODEL_ID, torch_dtype=torch.float32, device_map="cpu").eval()
             try:
                 torch.set_num_threads(max(1, os.cpu_count() or 1))
             except Exception:  # noqa: BLE001 — thread hint is best-effort
