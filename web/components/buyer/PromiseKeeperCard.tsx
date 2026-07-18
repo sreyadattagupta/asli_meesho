@@ -14,6 +14,45 @@ export interface PromiseVerdict {
   reason: string;
 }
 
+/**
+ * Shrink a camera photo before upload.
+ *
+ * A phone shot is routinely 3–12 MB, and a serverless function body caps at
+ * 4.5 MB — over that the platform rejects the request with an HTML error page
+ * before our route ever runs, which the buyer saw as a bare network error. The
+ * verifier works off a garment silhouette, so 1600px is ample.
+ */
+async function downscale(file: File, maxEdge = 1600, quality = 0.85): Promise<File> {
+  if (!file.type.startsWith("image/") || typeof createImageBitmap !== "function") return file;
+  try {
+    const bitmap = await createImageBitmap(file);
+    const longest = Math.max(bitmap.width, bitmap.height);
+    const scale = Math.min(1, maxEdge / longest);
+    // Already small enough on both counts — leave it untouched.
+    if (scale === 1 && file.size < 1_500_000) {
+      bitmap.close?.();
+      return file;
+    }
+    const w = Math.round(bitmap.width * scale);
+    const h = Math.round(bitmap.height * scale);
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      bitmap.close?.();
+      return file;
+    }
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    bitmap.close?.();
+    const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, "image/jpeg", quality));
+    if (!blob) return file;
+    return new File([blob], file.name.replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg" });
+  } catch {
+    return file; // never block the upload on a resize failure
+  }
+}
+
 export function PromiseKeeperCard({
   orderId,
   promise,
@@ -33,10 +72,12 @@ export function PromiseKeeperCard({
     | { title?: string; price?: number; imageUrl?: string; sizeChart?: Record<string, number> }
     | undefined;
 
-  function pick(f: File | null) {
-    setFile(f);
-    setPreview(f ? URL.createObjectURL(f) : null);
+  async function pick(f: File | null) {
+    const shrunk = f ? await downscale(f) : null;
+    setFile(shrunk);
+    setPreview(shrunk ? URL.createObjectURL(shrunk) : null);
     setVerdict(null);
+    setErr(null);
   }
 
   async function check() {
@@ -47,7 +88,23 @@ export function PromiseKeeperCard({
       const res = await fetch("/api/agents/promise-keeper/check", file
         ? { method: "POST", body: (() => { const fd = new FormData(); fd.append("orderId", orderId); fd.append("delivery", file, file.name); return fd; })() }
         : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId }) });
-      const body = await res.json();
+
+      // A platform-level failure (413 too large, 504 timeout) returns an HTML error page, not our
+      // JSON envelope — parsing it blind is what used to surface as a bare "Network hiccup".
+      const raw = await res.text();
+      let body: { error?: { message?: string } } & Partial<PromiseVerdict>;
+      try {
+        body = JSON.parse(raw);
+      } catch {
+        setErr(
+          res.status === 413
+            ? "That photo is too large — try one under 4 MB."
+            : res.status === 504 || res.status === 408
+              ? "The check is taking longer than usual — retry in a moment."
+              : `Check failed (${res.status}) — retry.`,
+        );
+        return;
+      }
       if (!res.ok) {
         setErr(body?.error?.message ?? "Check failed — retry.");
         return;

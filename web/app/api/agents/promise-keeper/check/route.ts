@@ -7,6 +7,10 @@ import { vlmVerifyDelivery } from "@/lib/vlmClient";
 import { loadImageBlob } from "@/lib/images";
 import { applyTrustDelta } from "@/lib/engines/trust";
 
+// This route waits on the CV service, which cold-starts in 30–60s. The platform default cuts the
+// function off well before that and returns an HTML 504, which the client cannot parse as JSON.
+export const maxDuration = 120;
+
 /**
  * Agent 4 — delivery vs frozen promise. Real verification: the delivery photo (buyer upload or the
  * seeded delivery image) is compared against the frozen catalog image via the shared VLM/CLIP
