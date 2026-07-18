@@ -6,8 +6,6 @@ __pycache__/
 .env.local
 *.local
 qdrant_data/
-.playwright-mcp/
-playwright-report/
 blob-report/
 playwright/.cache/
 my-video/
@@ -21,11 +19,3 @@ test-results/
 /live_other.png
 /live_same.jpeg
 
-# internal build docs (kept local, not in repo)
-CLAUDE.md
-AGENTS.md
-docs/
-
-# local scratch screenshots dropped in the repo root (kept local, not in repo). Root-only on purpose:
-# a bare *.png would silently swallow real assets added anywhere else.
-/*.png
