@@ -76,7 +76,7 @@ Behind the flow, an **orchestrator** routes each listing by risk to specialist a
 | [1. Problem](#1-the-problem) | [8. Tech stack](#8-technology-stack) | [15. Security](#15-security) |
 | [2. Solution](#2-solution-overview) | [9. Folder structure](#9-folder-structure) | [16. Testing](#16-testing) |
 | [3. Features](#3-features) | [10. Local setup](#10-local-setup-guide) | [17. Deployment](#17-deployment) |
-| [4. AI agents](#4-ai-agent-architecture) | [11. Env variables](#11-environment-variables) | [18. Attribution](#18-open-source-attribution) |
+| [4. AI agents](#4-ai-agent-architecture) · [Demo scope](#-demo-implementation--scope) | [11. Env variables](#11-environment-variables) | [18. Attribution](#18-open-source-attribution) |
 | [5. Architecture](#5-complete-system-architecture) | [12. API reference](#12-api-documentation) | [19. Roadmap](#19-future-improvements) |
 | [6. Workflow](#6-project-workflow) | [13. Screenshots](#13-screenshots) | [20. Team](#20-team) |
 | [7. Demo script](#-demo-script-5-minutes) | [14. Performance](#14-performance) | [21. License](#21-license) · [22. Thanks](#22-acknowledgements) |
@@ -275,6 +275,53 @@ language model guessing.
 Agents never call each other. The orchestrator owns sequencing; agents return typed signals; state
 persists so a retry survives a reload. **Agent 2 is unreachable until Agent 1 passes** — enforced by
 the step machine, not by UI convention.
+
+---
+
+## 📌 Demo implementation & scope
+
+For full transparency: **Agent 3 (Risk Radar)** and **Agent 4 (Promise Keeper)** ship as **demonstrated
+implementations** — real code, real persisted state, and real explainable output, running against
+seeded stand-in data and labelled `simulated` in the UI. This is a deliberate scoping decision, **not an
+implementation limitation**.
+
+### Why these two are demonstrated, not live-integrated
+
+Both agents depend on **Meesho's internal production ecosystem**, which is proprietary and cannot be
+reached or validated from a public hackathon environment:
+
+- Real seller accounts and historical seller behaviour
+- Listing-lifecycle events and platform-wide listing data
+- Trust & Safety (Suraksha) workflows
+- PRISM ranking signals
+- Delivery status / logistics APIs and proof-of-delivery images
+- Internal marketplace metadata and backend services
+
+Because these systems are not publicly accessible, a faithful demo reproduces exactly how each agent
+would behave once wired to the real platform — the same interfaces, the same decision logic, the same
+explainable output — so the intended user experience and system behaviour are demonstrable today.
+
+### What is fully implemented (real AI inference)
+
+- ✅ **Agent 1 — Possession-Proof** — real models end to end (SerpAPI trigger, SigLIP/DINOv2 same-product
+  gate, VLM cross-check)
+- ✅ **Agent 2 — Smart Sizing** — real A4-homography computer vision, no language-model guessing
+- ✅ Multi-agent orchestration (`decide()`), the unified decision engine, and the full explainable
+  verification pipeline
+
+These operate on **real images** and prove the core feasibility of the solution.
+
+### What each demonstrated agent needs to go live
+
+- **Agent 3 — Risk Radar** requires real seller history, trust scores, behavioural signals and
+  platform-wide listing data that exist only inside Meesho.
+- **Agent 4 — Promise Keeper** requires Meesho's delivery workflow, logistics APIs and proof-of-delivery
+  images to compare the delivered product against the frozen listing promise.
+
+**In summary:** the demo exists solely to stand in for interactions that require Meesho's private
+production infrastructure. The architecture, workflows and integration contracts are complete and
+**production-ready** — connected to the real Meesho platform, Agents 3 and 4 run under the same design
+with access to the required internal services.
 
 ---
 
