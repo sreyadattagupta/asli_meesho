@@ -17,6 +17,10 @@ models/*.log
 # out at ~450MB / 300s on a home uplink). Small JSON calibrations stay in the upload.
 models/clip-vit-b32/
 models/dinov2-small/
+# Same reasoning for the fine-tuned matchers: the container pulls them from the Hub on first warmup
+# (GARMENT_HF_REPO / PROMISE_HF_REPO), so a locally-synced copy must not ride along in the upload.
+models/garment-dinov2/
+models/promise-dinov2/
 # tests + one-off dev tooling — not needed in the serving image
 test_*.py
 gen_test_data.py

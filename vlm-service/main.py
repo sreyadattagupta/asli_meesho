@@ -79,6 +79,7 @@ import prompts  # noqa: E402
 import same_item  # noqa: E402 — CLIP(ONNX) same-item gate + DINOv2 evidence
 import siglip_embed  # noqa: E402 — same-product gate: SigLIP embedding (HF Hub, loaded once)
 import garment_embed  # noqa: E402 — PRIMARY same-product gate when present: fine-tuned DINOv2 (Track B)
+import promise_embed  # noqa: E402 — PRIMARY Agent-4 delivery matcher: DINOv2 fine-tuned catalog↔parcel
 import garment_type as garment_clf  # noqa: E402 — Agent-2 garment-type: fine-tuned HF classifier (Colab-trained)
 import clothes_seg  # noqa: E402 — clothing segmentation (SegFormer, HF Hub) — primary garment mask
 import segment  # noqa: E402 — garment segmentation (crop background before CLIP)
@@ -136,6 +137,7 @@ async def lifespan(app: FastAPI):
     def _warm_hf_models() -> None:
         for name, warm in (("siglip", siglip_embed.warmup),
                            ("garment-matcher", garment_embed.warmup),
+                           ("promise-matcher", promise_embed.warmup),
                            ("garment-type", garment_clf.warmup),
                            ("clothes-seg", clothes_seg.warmup)):
             try:
@@ -168,6 +170,10 @@ MAX_BYTES = 10 * 1024 * 1024  # 10 MB per image
 #   ≥ MATCH_THRESHOLD → strongly similar (delivery: same item if the VLM attributes agree)
 MATCH_THRESHOLD = float(os.getenv("MATCH_THRESHOLD", "0.72"))
 MATCH_HI = float(os.getenv("MATCH_HI", "0.85"))
+# Agent-4 same-product bar, used ONLY if promise_embed loads but its calibration file did not. The
+# artifact's learned gate_threshold (0.6829) wins whenever present — this is the safety net, not the
+# operating point, and it stays BELOW Agent 1's bar by design (false accusation is the costly error).
+PROMISE_THRESHOLD = float(os.getenv("PROMISE_THRESHOLD", "0.68"))
 # Perceptual-hash pass bar for /vlm/match when no ONNX backbone is available (never fail-open).
 MATCH_SOFT_HI = float(os.getenv("MATCH_SOFT_HI", "0.80"))
 # Full-frame similarity at/above this ⇒ the "live" photo is pixel-identical to the catalog, i.e. a
@@ -306,6 +312,16 @@ async def health():
             "available": same_item.available(),
             "clip_onnx": clip_embed.available(),      # semantic fallback gate
             "dinov2_onnx": dino_embed.available(),    # reported instance evidence
+        },
+        "promise_gate": {               # Agent-4 delivery matcher — SEPARATE fine-tune from Agent 1's
+            "model": promise_embed.model_id(),
+            "available": promise_embed.available(),
+            # The learned bar actually in force; falls back to PROMISE_THRESHOLD if the calibration
+            # file is missing. None ⇒ the legacy cv cascade is deciding (MATCH_HI/MATCH_THRESHOLD).
+            "threshold": (promise_embed.threshold() or PROMISE_THRESHOLD)
+                         if promise_embed.available() else None,
+            "artifact_threshold": promise_embed.threshold(),  # provenance: the learned Hub bar
+            "load_error": promise_embed.load_error(),
         },
         "ocr_available": ocr.available(),
         "garment_type_model": {         # Agent-2 fine-tuned garment-type classifier (Colab-trained, HF Hub)
@@ -760,15 +776,26 @@ async def vlm_verify_delivery(
 ):
     """Agent 4 — Promise Keeper. Delivery photo vs the frozen promise.
 
-    Real signals: CLIP embedding cosine (delivery vs catalog) for product identity + a VLM attribute
-    read (category / count / colour) compared against the frozen promise. Confidence is calibrated,
-    not a constant. Perceptual-hash backend is unreliable across delivery angles, so there we defer
-    the same-product call to the VLM; CLIP uses the cosine directly.
+    Real signals: a fine-tuned same-product embedding cosine (delivery vs catalog) for identity + a
+    VLM attribute read (category / count / colour) compared against the frozen promise. Confidence is
+    calibrated, not a constant.
+
+    Identity comes from promise_embed (DINOv2-small fine-tuned on catalog↔parcel pairs) with the bar
+    its own calibration learned. The legacy cv cascade is only a FALLBACK: measured on real fixtures,
+    phash scored a genuine same-kurti pair at 0.5938 against a 0.72 bar while a different dress scored
+    0.4688 — it cannot span the studio↔handheld gap, so every honest delivery came back a mismatch.
     """
     delivery_bytes = await _read(delivery, "delivery")
     catalog_bytes = await _read(catalog, "catalog")
 
-    sim = cv.similarity(catalog_bytes, delivery_bytes)  # {score, method}
+    # PRIMARY: the Agent-4 matcher, judged against its OWN learned bar. Deliberately looser than
+    # Agent 1's gate — here the expensive error is accusing an honest seller, not missing a thief.
+    promise_bar = None
+    sim = promise_embed.similarity(catalog_bytes, delivery_bytes)
+    if sim is not None:
+        promise_bar = promise_embed.threshold() or PROMISE_THRESHOLD
+    else:
+        sim = cv.similarity(catalog_bytes, delivery_bytes)  # {score, method}
 
     # The VLM only DESCRIBES the parcel; the image comparison above decides identity. So a VLM that
     # is down, over quota, or returning malformed JSON leaves us with a weaker answer, not no answer
@@ -786,11 +813,14 @@ async def vlm_verify_delivery(
     except Exception:  # noqa: BLE001 — attribute read is optional; identity is decided above
         pass
 
-    # Near-duplicate is same-product on ANY backend: if the pixels essentially agree, no second
-    # opinion can make them a different item. Below that bar the VLM may CONFIRM a strong match, but
-    # it is never the sole judge — a malformed reply was reporting byte-identical photos as a
-    # mismatch, because phash handed it the whole decision.
-    same_product = bool(sim["score"] >= MATCH_HI or (sim["score"] >= MATCH_THRESHOLD and vlm_same))
+    # With the trained matcher present its calibrated bar IS the decision — the model was fitted on
+    # exactly this catalog↔parcel domain, so a VLM tie-breaker would only add noise (and the VLM is
+    # the component that returns malformed JSON). Without it, fall back to the legacy rule: a
+    # near-duplicate is same-product on any backend, and between the two bars the VLM may CONFIRM.
+    if promise_bar is not None:
+        same_product = bool(sim["score"] >= promise_bar)
+    else:
+        same_product = bool(sim["score"] >= MATCH_HI or (sim["score"] >= MATCH_THRESHOLD and vlm_same))
 
     # Only compare a category the VLM actually READ. The old fallback `observed.category or category`
     # compared the promise with itself when the read was missing, which scored as agreement on a good
@@ -819,6 +849,7 @@ async def vlm_verify_delivery(
         },
         "reason": (
             f"Same-product {sim['method']} {sim['score']:.2f}"
+            + (f" vs bar {promise_bar:.2f}" if promise_bar is not None else "")
             + (f"; category {'match' if cat_ok else 'differs'}" if cat_read else "")
             + ("" if vlm_ok else "; attribute read unavailable")
             + "."

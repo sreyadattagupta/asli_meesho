@@ -8,3 +8,10 @@ venv/
 # transient eval artifacts (the committed model.onnx + *_calibration.json ARE tracked)
 models/eval_cache_*.pkl
 models/*.log
+# Fine-tuned matchers are pulled from the HF Hub at runtime (GARMENT_HF_REPO / PROMISE_HF_REPO), like
+# the big backbones — the artifact is the Hub repo, not a blob in git history. Their calibration files
+# arrive with them, so they are runtime state too.
+models/garment-dinov2/
+models/promise-dinov2/
+models/garment_calibration.json
+models/promise_calibration.json
