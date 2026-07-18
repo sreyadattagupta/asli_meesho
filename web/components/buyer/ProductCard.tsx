@@ -1,10 +1,14 @@
+"use client";
+
 import Link from "next/link";
 import { Star } from "lucide-react";
 import { VerifiedBadge } from "@/components/ui/VerifiedBadge";
+import { useT } from "@/lib/i18n";
 import type { FeedItem } from "@/lib/feed";
 
 /** Marketplace grid card — Meesho light retail skin, ✓ Asli Verified payoff on top. */
 export function ProductCard({ item }: { item: FeedItem }) {
+  const t = useT();
   return (
     <Link
       href={`/buyer/listings/${item.id}`}
@@ -33,7 +37,7 @@ export function ProductCard({ item }: { item: FeedItem }) {
               marketplace — but never passed off as real next to a measured size chart. */}
           <span
             className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-1.5 py-0.5 text-[11px] font-semibold text-zinc-500"
-            title="Sample rating — demo data, not from real buyers"
+            title={t("product.ratingTooltip")}
           >
             <Star className="h-3 w-3 fill-current" aria-hidden />
             {item.rating}
@@ -41,8 +45,8 @@ export function ProductCard({ item }: { item: FeedItem }) {
           </span>
         </div>
         <div className="text-[11px] text-zinc-400">
-          <span className="text-zinc-300">rating simulated</span> · Free Delivery · COD
-          {!item.verified && <span className="ml-1.5 text-zinc-300">· unverified</span>}
+          <span className="text-zinc-300">{t("product.ratingSimulated")}</span> · {t("product.freeDelivery")} · {t("product.cod")}
+          {!item.verified && <span className="ml-1.5 text-zinc-300">· {t("product.unverified")}</span>}
         </div>
       </div>
     </Link>

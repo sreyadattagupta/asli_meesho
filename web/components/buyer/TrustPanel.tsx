@@ -6,14 +6,17 @@ import { useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Camera, ChevronDown, PackageCheck, Ruler, ShieldCheck, Store } from "lucide-react";
 import { AgentReasonRow } from "@/components/ui/AgentReasonRow";
+import { useT } from "@/lib/i18n";
 import type { ListingBundle } from "@/lib/listing";
 
-const BAND_LABEL = { high: "High-trust seller", medium: "Established seller", low: "New seller" } as const;
-
 export function TrustPanel({ bundle }: { bundle: ListingBundle }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const reduce = useReducedMotion();
   const { listing, checks, measurement, trustBand, promiseArmed, decision } = bundle;
+  const BAND_LABEL = {
+    high: t("product.seller.high"), medium: t("product.seller.established"), low: t("product.seller.new"),
+  } as const;
   const verdictColor = {
     verified: "text-asli-green", blocked: "text-asli-red",
     escalated: "text-asli-amber", pending: "text-asli-violet",
@@ -31,7 +34,7 @@ export function TrustPanel({ bundle }: { bundle: ListingBundle }) {
       >
         <span className="flex items-center gap-2 text-sm font-semibold">
           <ShieldCheck className="h-4 w-4 text-asli-green" aria-hidden />
-          Why you can trust this
+          {t("trust.why")}
         </span>
         <ChevronDown
           className={`h-4 w-4 text-white/50 transition-transform ${open ? "rotate-180" : ""}`}
@@ -48,16 +51,17 @@ export function TrustPanel({ bundle }: { bundle: ListingBundle }) {
           >
             <div className="space-y-1 border-t border-white/10 px-4 py-3">
               <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg bg-white/[0.04] px-3 py-2 text-xs">
-                <span className="font-semibold text-white/50">Unified Decision Engine:</span>
-                <span className={`font-bold capitalize ${verdictColor}`}>{decision.verdict}</span>
+                <span className="font-semibold text-white/50">{t("trust.engine")}</span>
+                <span className={`font-bold ${verdictColor}`}>{t(`trust.verdict.${decision.verdict}`)}</span>
                 <span className="text-white/40">
-                  · trust {decision.trustScore}/100 · {decision.asliVerified ? "✓ Asli Verified" : "not yet verified"}
+                  · {t("trust.trust", { score: decision.trustScore })} ·{" "}
+                  {decision.asliVerified ? `✓ ${t("verified.badge")}` : t("trust.notYetVerified")}
                 </span>
               </div>
               {possession ? (
                 <AgentReasonRow
                   icon={Camera}
-                  label="Possession proven with a live challenge code"
+                  label={t("trust.possessionProven")}
                   confidence={possession.confidence}
                   passed={possession.action === "AUTO_APPROVE"}
                   note={possession.reason}
@@ -65,19 +69,19 @@ export function TrustPanel({ bundle }: { bundle: ListingBundle }) {
               ) : (
                 <AgentReasonRow
                   icon={Camera}
-                  label="Possession not verified for this listing"
+                  label={t("trust.possessionNot")}
                   passed={false}
-                  note="Seller hasn't completed the live proof."
+                  note={t("trust.possessionNotNote")}
                 />
               )}
               <AgentReasonRow
                 icon={Ruler}
                 label={
                   measurement
-                    ? `Size measured from a flat-lay (${measurement.referenceUsed} reference)`
+                    ? t("trust.sizeMeasuredFrom", { ref: measurement.referenceUsed })
                     : listing.sizeChart
-                      ? "Size chart measured, not guessed"
-                      : "No measured size chart"
+                      ? t("trust.sizeMeasured")
+                      : t("trust.noSize")
                 }
                 confidence={sizeConfidence}
                 passed={sizeConfidence !== undefined ? true : undefined}
@@ -85,17 +89,17 @@ export function TrustPanel({ bundle }: { bundle: ListingBundle }) {
               <AgentReasonRow
                 icon={Store}
                 label={BAND_LABEL[trustBand]}
-                note={`Trust score ${bundle.trustScore}/100 · Risk Radar (simulated seller history)`}
+                note={t("trust.riskNote", { score: bundle.trustScore })}
                 passed={trustBand !== "low" ? true : undefined}
               />
               <AgentReasonRow
                 icon={PackageCheck}
-                label={promiseArmed ? "Promise Keeper armed" : "Promise Keeper arms at go-live"}
-                note="Listing promises frozen at go-live; checked against the delivery photo."
+                label={promiseArmed ? t("trust.promiseArmed") : t("trust.promiseArms")}
+                note={t("trust.promiseNote")}
                 passed={promiseArmed ? true : undefined}
               />
               <p className="pb-1 pt-2 text-[10px] uppercase tracking-wide text-white/30">
-                Verified-first ranking boost active · seller history simulated
+                {t("trust.footer")}
               </p>
             </div>
           </motion.div>
