@@ -4,15 +4,36 @@
 // verified by the shared VLM/CLIP pipeline. Buyer may upload a fresh photo or use the delivered one.
 import { useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { AlertTriangle, CheckCircle2, PackageCheck, Camera } from "lucide-react";
+import { AlertTriangle, CheckCircle2, PackageCheck, Camera, XCircle, Eye, RefreshCw } from "lucide-react";
 import type { PromiseRecord } from "@/lib/db/types";
 
+export type PromiseStatus =
+  | "PROMISE_KEPT" | "PROMISE_BROKEN" | "PRODUCT_MISMATCH"
+  | "REQUIRES_REVIEW" | "RETAKE_PHOTO" | "NO_PHOTO";
+
 export interface PromiseVerdict {
+  status: PromiseStatus;
   promiseKept: boolean;
   confidence: number;
+  score: number;
   mismatches: string[];
+  mismatchCodes?: string[];
   reason: string;
+  requiresRetake: boolean;
+  updateTrustScore: boolean;
 }
+
+// How each verdict state presents: heading, tone (drives colour), whether to show a % and the
+// trust-score note. Mismatch/retake states deliberately show NO percentage (invariant: never put a
+// similarity number on a product we could not verify).
+const STATUS_UI: Record<PromiseStatus, { label: string; tone: "green" | "amber" | "red"; icon: typeof CheckCircle2; showScore: boolean }> = {
+  PROMISE_KEPT:    { label: "Promise kept",             tone: "green", icon: CheckCircle2,  showScore: true },
+  PROMISE_BROKEN:  { label: "Promise broken",           tone: "amber", icon: AlertTriangle, showScore: true },
+  PRODUCT_MISMATCH:{ label: "Different product",        tone: "red",   icon: XCircle,       showScore: false },
+  REQUIRES_REVIEW: { label: "Sent for review",          tone: "amber", icon: Eye,           showScore: false },
+  RETAKE_PHOTO:    { label: "Couldn't verify — retake", tone: "amber", icon: RefreshCw,     showScore: false },
+  NO_PHOTO:        { label: "No delivery photo",        tone: "amber", icon: Camera,        showScore: false },
+};
 
 /**
  * Shrink a camera photo before upload.
@@ -178,34 +199,46 @@ export function PromiseKeeperCard({
 
       <AnimatePresence mode="wait">
         {verdict ? (
-          <motion.div
-            key="verdict"
-            initial={reduce ? { opacity: 0 } : { opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            className={[
-              "mt-4 rounded-xl border px-4 py-3",
-              verdict.promiseKept
-                ? "border-asli-green/30 bg-asli-green/5"
-                : "border-asli-amber/40 bg-asli-amber/5",
-            ].join(" ")}
-          >
-            <p className={`flex items-center gap-2 text-sm font-bold ${verdict.promiseKept ? "text-asli-green" : "text-asli-amber"}`}>
-              {verdict.promiseKept ? (
-                <><CheckCircle2 className="h-4 w-4" aria-hidden /> Promise kept · {Math.round(verdict.confidence * 100)}%</>
-              ) : (
-                <><AlertTriangle className="h-4 w-4" aria-hidden /> Mismatch found · {Math.round(verdict.confidence * 100)}%</>
-              )}
-            </p>
-            <p className="mt-1 text-xs text-zinc-600">{verdict.reason}</p>
-            {verdict.mismatches.length > 0 && (
-              <ul className="mt-2 list-inside list-disc text-xs text-zinc-600">
-                {verdict.mismatches.map((m) => <li key={m}>{m}</li>)}
-              </ul>
-            )}
-            <p className="mt-2 text-[10px] uppercase tracking-wide text-zinc-400">
-              Outcome recorded on the seller&apos;s trust score
-            </p>
-          </motion.div>
+          (() => {
+            const ui = STATUS_UI[verdict.status] ?? STATUS_UI[verdict.promiseKept ? "PROMISE_KEPT" : "PRODUCT_MISMATCH"];
+            const Icon = ui.icon;
+            const toneText = ui.tone === "green" ? "text-asli-green" : ui.tone === "red" ? "text-asli-red" : "text-asli-amber";
+            const toneBox =
+              ui.tone === "green" ? "border-asli-green/30 bg-asli-green/5"
+                : ui.tone === "red" ? "border-asli-red/40 bg-asli-red/5"
+                : "border-asli-amber/40 bg-asli-amber/5";
+            return (
+              <motion.div
+                key="verdict"
+                initial={reduce ? { opacity: 0 } : { opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                className={["mt-4 rounded-xl border px-4 py-3", toneBox].join(" ")}
+              >
+                <p className={`flex items-center gap-2 text-sm font-bold ${toneText}`}>
+                  <Icon className="h-4 w-4" aria-hidden /> {ui.label}
+                  {ui.showScore && <span className="font-normal opacity-70">· {verdict.score}%</span>}
+                </p>
+                <p className="mt-1 text-xs text-zinc-600">{verdict.reason}</p>
+                {verdict.mismatches.length > 0 && (
+                  <ul className="mt-2 list-inside list-disc text-xs text-zinc-600">
+                    {verdict.mismatches.map((m) => <li key={m}>{m}</li>)}
+                  </ul>
+                )}
+                {verdict.updateTrustScore ? (
+                  <p className="mt-2 text-[10px] uppercase tracking-wide text-zinc-400">
+                    Outcome recorded on the seller&apos;s trust score
+                  </p>
+                ) : verdict.requiresRetake ? (
+                  <button
+                    onClick={() => { setVerdict(null); setErr(null); }}
+                    className="mt-3 inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-semibold text-zinc-600 transition hover:border-meesho-pink/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-meesho-pink"
+                  >
+                    <RefreshCw className="h-3 w-3" aria-hidden /> Retake / upload another photo
+                  </button>
+                ) : null}
+              </motion.div>
+            );
+          })()
         ) : (
           <motion.div key="cta" className="mt-4">
             {err && (

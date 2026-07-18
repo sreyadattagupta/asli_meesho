@@ -6,52 +6,89 @@ const frozen: FrozenPromise = {
   sizeChart: { chest_cm: 96, length_cm: 118, waist_cm: 88 }, imageUrl: "/mock/delivery/order-catalog.jpg",
 };
 
-describe("checkPromise", () => {
-  it("kept when delivery matches product + category + size", () => {
+describe("checkPromise — identity hard gate", () => {
+  it("kept only when the SAME product arrives, category agrees, and size holds", () => {
     const v = checkPromise(frozen, {
       photoPresent: true, cosine: 0.9, sameProduct: true, observedCategory: "kurtis",
       observedSize: { chest_cm: 96, length_cm: 118, waist_cm: 88 },
     });
+    expect(v.status).toBe("PROMISE_KEPT");
     expect(v.promiseKept).toBe(true);
     expect(v.confidence).toBeGreaterThan(0.85);
+    expect(v.updateTrustScore).toBe(true);
     expect(v.mismatches).toHaveLength(0);
   });
 
-  it("flags size drift > 2cm", () => {
+  // The reported production bug: a completely different product (T-shirt) must NEVER be "kept".
+  it("a different product ⇒ PRODUCT_MISMATCH, score 0, no trust update", () => {
+    const v = checkPromise(
+      { ...frozen, title: "Radha Krishna printed kurta", category: "kurtis" },
+      { photoPresent: true, cosine: 0.28, sameProduct: false, observedCategory: "tshirt" },
+    );
+    expect(v.status).toBe("PRODUCT_MISMATCH");
+    expect(v.promiseKept).toBe(false);
+    expect(v.score).toBe(0);
+    expect(v.updateTrustScore).toBe(false);
+    expect(v.requiresRetake).toBe(true);
+    expect(v.mismatchCodes).toContain("identity_mismatch");
+    expect(v.mismatchCodes).toContain("category_mismatch");
+  });
+
+  // Regression: verification unavailable (no catalog image / CV down) used to default OPEN at 45%.
+  it("no verification signal ⇒ RETAKE, never a silent pass", () => {
+    const v = checkPromise(frozen, { photoPresent: true }); // sameProduct undefined, no cosine
+    expect(v.status).toBe("RETAKE_PHOTO");
+    expect(v.promiseKept).toBe(false);
+    expect(v.score).toBe(0);
+    expect(v.updateTrustScore).toBe(false);
+  });
+
+  it("a garment-category conflict fails even if the embedding says same", () => {
+    const v = checkPromise(frozen, {
+      photoPresent: true, cosine: 0.85, sameProduct: true, observedCategory: "sarees",
+    });
+    expect(v.status).toBe("PRODUCT_MISMATCH");
+    expect(v.promiseKept).toBe(false);
+    expect(v.mismatchCodes).toContain("category_mismatch");
+    expect(v.updateTrustScore).toBe(false);
+  });
+
+  it("same product but low confidence ⇒ REQUIRES_REVIEW, not approved", () => {
+    const v = checkPromise(frozen, {
+      photoPresent: true, cosine: 0.55, sameProduct: true, observedCategory: "kurtis",
+    });
+    expect(v.status).toBe("REQUIRES_REVIEW");
+    expect(v.promiseKept).toBe(false);
+    expect(v.score).toBe(0);
+    expect(v.updateTrustScore).toBe(false);
+  });
+
+  it("right product but size drift > 2cm ⇒ PROMISE_BROKEN (seller penalised)", () => {
     const v = checkPromise(frozen, {
       photoPresent: true, cosine: 0.9, sameProduct: true, observedCategory: "kurtis",
       observedSize: { chest_cm: 100, length_cm: 118, waist_cm: 88 },
     });
+    expect(v.status).toBe("PROMISE_BROKEN");
     expect(v.promiseKept).toBe(false);
+    expect(v.updateTrustScore).toBe(true);
     expect(v.mismatches.some((m) => /chest off by 4\.0 cm/.test(m))).toBe(true);
   });
 
-  it("no photo ⇒ low-confidence, not kept", () => {
+  it("no photo ⇒ NO_PHOTO, not kept", () => {
     const v = checkPromise(frozen, { photoPresent: false });
+    expect(v.status).toBe("NO_PHOTO");
     expect(v.promiseKept).toBe(false);
     expect(v.confidence).toBe(0.3);
+    expect(v.updateTrustScore).toBe(false);
   });
 
-  it("flags a different product (image mismatch)", () => {
-    const v = checkPromise(frozen, {
-      photoPresent: true, cosine: 0.3, sameProduct: false, observedCategory: "kurtis",
-    });
-    expect(v.promiseKept).toBe(false);
-    expect(v.mismatches).toContain("delivered item does not match the listing photo");
-    expect(v.confidence).toBeLessThan(0.5);
-  });
-
-  it("flags a category mismatch", () => {
-    const v = checkPromise(frozen, {
-      photoPresent: true, cosine: 0.85, sameProduct: true, observedCategory: "sarees",
-    });
-    expect(v.promiseKept).toBe(false);
-    expect(v.mismatches.some((m) => /category differs/.test(m))).toBe(true);
-  });
-
-  it("confidence rises with image similarity", () => {
-    const lo = checkPromise(frozen, { photoPresent: true, cosine: 0.5, sameProduct: true, observedCategory: "kurtis" });
-    const hi = checkPromise(frozen, { photoPresent: true, cosine: 0.95, sameProduct: true, observedCategory: "kurtis" });
-    expect(hi.confidence).toBeGreaterThan(lo.confidence);
+  it("never assigns a similarity percentage to a non-verified state", () => {
+    for (const obs of [
+      { photoPresent: true, sameProduct: false as const, cosine: 0.4, observedCategory: "tshirt" },
+      { photoPresent: true }, // unavailable
+      { photoPresent: true, sameProduct: true as const, cosine: 0.5, observedCategory: "kurtis" }, // review
+    ]) {
+      expect(checkPromise(frozen, obs).score).toBe(0);
+    }
   });
 });

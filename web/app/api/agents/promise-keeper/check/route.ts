@@ -90,24 +90,34 @@ export async function POST(req: Request) {
       kept: verdict.promiseKept, confidence: verdict.confidence, checkedAt: new Date().toISOString(),
     });
 
-    // Feed the outcome back into the seller's trust score (closes the loop to Seller 360).
-    const listing = await repo.getListing(order.listingId);
-    if (listing) {
-      const seller = await repo.getSeller(listing.sellerId);
-      if (seller) {
-        const delta = verdict.promiseKept ? 2 : -5;
-        const { trustScore, trustBand } = applyTrustDelta(seller, delta);
-        await repo.updateSeller(seller.id, { trustScore, trustBand });
-        await repo.addTrustEvent({
-          sellerId: seller.id, delta,
-          reason: verdict.promiseKept ? "Promise kept on delivery" : "Promise mismatch on delivery",
-          source: "promise_keeper",
-        });
+    // Feed the outcome back into the seller's trust score — but ONLY when identity verification
+    // actually passed (PROMISE_KEPT / PROMISE_BROKEN). A product mismatch, a low-confidence review,
+    // a retake request, or unavailable verification must never move the seller's score: those may be
+    // a wrong/blurry buyer upload, not a broken promise, and rewarding/penalising on them is exactly
+    // the false-positive this gate exists to prevent.
+    if (verdict.updateTrustScore) {
+      const listing = await repo.getListing(order.listingId);
+      if (listing) {
+        const seller = await repo.getSeller(listing.sellerId);
+        if (seller) {
+          const delta = verdict.promiseKept ? 2 : -5;
+          const { trustScore, trustBand } = applyTrustDelta(seller, delta);
+          await repo.updateSeller(seller.id, { trustScore, trustBand });
+          await repo.addTrustEvent({
+            sellerId: seller.id, delta,
+            reason: verdict.promiseKept ? "Promise kept on delivery" : "Promise broken on delivery",
+            source: "promise_keeper",
+          });
+        }
       }
     }
     await repo.appendAudit({
       listingId: order.listingId, actor: user.id, event: "promise_checked",
-      data: { kept: verdict.promiseKept, confidence: verdict.confidence, cosine: obs.cosine ?? null },
+      data: {
+        status: verdict.status, kept: verdict.promiseKept, confidence: verdict.confidence,
+        score: verdict.score, cosine: obs.cosine ?? null,
+        mismatchCodes: verdict.mismatchCodes, trustUpdated: verdict.updateTrustScore,
+      },
     });
 
     return ok(verdict);
