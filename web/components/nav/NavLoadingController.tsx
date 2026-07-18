@@ -1,12 +1,19 @@
 "use client";
 
-// Mounted once in PortalShell. Shows a full-screen loading overlay between a sidebar nav click
-// (see SidebarNav's onClick) and the destination page actually rendering, held for a minimum
-// dwell so the witty message is always readable rather than flashing. A hard MAX_WAIT safety
-// timeout always clears it, so a cancelled or failed navigation can never leave it stuck.
-import { useEffect, useRef } from "react";
+// Mounted once in AppShell (always present, so it survives the portal shell swapping on a persona
+// switch). Shows a full-screen loading overlay between the start of a navigation and the destination
+// page rendering, held for a minimum dwell so the message is readable rather than flashing. A hard
+// MAX_WAIT safety timeout always clears it, so a cancelled or failed navigation can't leave it stuck.
+//
+// Two ways a run starts:
+//   1. Explicit `start()` calls — the sidebar (tailored copy) and the persona switcher (AppShell).
+//   2. The global capture-phase click listener below — any other in-app <a> navigation (product
+//      cards, breadcrumbs, dashboard buttons…), so "it's loading" feedback is app-wide, not just on
+//      the sidebar.
+import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { useNavLoadingStore } from "@/lib/store";
+import { navMessagesForPath } from "@/lib/nav";
 import { LoadingOverlay } from "@/components/ui/LoadingOverlay";
 
 const MIN_DWELL = 1200;
@@ -18,31 +25,47 @@ export function NavLoadingController() {
   const active = useNavLoadingStore((s) => s.active);
   const messages = useNavLoadingStore((s) => s.messages);
   const startedAt = useNavLoadingStore((s) => s.startedAt);
+  const startPath = useNavLoadingStore((s) => s.startPath);
+  const start = useNavLoadingStore((s) => s.start);
   const stop = useNavLoadingStore((s) => s.stop);
   const pathname = usePathname();
 
-  // The path we were on when this run started — captured on the render where `active` flips true,
-  // which happens before the <Link> actually completes its transition — so we can tell once the
-  // route has genuinely changed.
-  const originPathRef = useRef<string | null>(null);
-  const wasActiveRef = useRef(false);
-  if (active && !wasActiveRef.current) originPathRef.current = pathname;
-  wasActiveRef.current = active;
+  // Global interceptor for ordinary link navigations. Capture phase so we fire before the router
+  // handles the click. We deliberately skip anything that isn't a plain same-tab, same-origin,
+  // different-page left-click — and the sidebar, which starts its own run with tailored copy.
+  useEffect(() => {
+    function onClick(e: MouseEvent) {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const anchor = (e.target as HTMLElement | null)?.closest?.("a");
+      if (!anchor) return;
+      if (anchor.target === "_blank" || anchor.hasAttribute("download")) return;
+      if (anchor.closest('nav[aria-label$="navigation"]')) return; // sidebar handles its own copy
+      const href = anchor.getAttribute("href");
+      if (!href) return;
+      let url: URL;
+      try {
+        url = new URL(href, window.location.href);
+      } catch {
+        return;
+      }
+      if (url.origin !== window.location.origin) return; // external link
+      if (url.pathname === window.location.pathname) return; // same page / in-page hash
+      start(navMessagesForPath(url.pathname));
+    }
+    document.addEventListener("click", onClick, true);
+    return () => document.removeEventListener("click", onClick, true);
+  }, [start]);
 
-  // Latest values for the polling closure below, without re-subscribing the interval every render.
-  const latestRef = useRef({ pathname, startedAt });
-  latestRef.current = { pathname, startedAt };
-
+  // Clear once the live path differs from where we started AND the minimum dwell has elapsed.
+  // pathname is a dependency, so the interval closure always sees the current route.
   useEffect(() => {
     if (!active) return;
     const id = setInterval(() => {
-      const { pathname: p, startedAt: s } = latestRef.current;
-      const pathChanged = originPathRef.current !== null && p !== originPathRef.current;
-      const dwelled = Date.now() - s >= MIN_DWELL;
-      if (pathChanged && dwelled) stop();
+      const changed = startPath !== null && pathname !== startPath;
+      if (changed && Date.now() - startedAt >= MIN_DWELL) stop();
     }, POLL_MS);
     return () => clearInterval(id);
-  }, [active, stop]);
+  }, [active, startPath, startedAt, pathname, stop]);
 
   // Safety net: a navigation that errors, is cancelled, or never resolves can't leave this stuck.
   useEffect(() => {

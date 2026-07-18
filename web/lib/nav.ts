@@ -100,6 +100,22 @@ export function navMessagesFor(item: NavItem): string[] {
   return item.loadingMessages ?? GENERIC_NAV_MESSAGES;
 }
 
+/**
+ * Loading-overlay copy for an arbitrary destination path — used by the global link interceptor
+ * (NavLoadingController) for navigations that don't originate from the sidebar. Matches the path
+ * against every role's nav items (best/longest match wins so `/seller/listings` beats `/seller`),
+ * falling back to the generic lines for detail pages, wizards, etc.
+ */
+export function navMessagesForPath(path: string): string[] {
+  let best: NavItem | undefined;
+  for (const items of Object.values(NAV)) {
+    for (const item of items) {
+      if (isActive(path, item) && (!best || item.href.length > best.href.length)) best = item;
+    }
+  }
+  return best ? navMessagesFor(best) : GENERIC_NAV_MESSAGES;
+}
+
 // Segment → crumb label for paths the NAV list doesn't cover (detail pages, wizard steps).
 const SEGMENT_LABELS: Record<string, string> = {
   seller: "Seller",

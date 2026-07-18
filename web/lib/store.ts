@@ -163,6 +163,10 @@ interface NavLoadingStore {
   active: boolean;
   messages: string[];
   startedAt: number;
+  /** The path we were on when loading began. The controller clears the overlay once the live path
+   *  differs from this — captured in the store (not a component ref) so it survives the controller
+   *  re-mounting when a persona switch swaps one portal shell for another. */
+  startPath: string | null;
   start: (messages: string[]) => void;
   stop: () => void;
 }
@@ -171,7 +175,14 @@ export const useNavLoadingStore = create<NavLoadingStore>((set) => ({
   active: false,
   messages: [],
   startedAt: 0,
-  start: (messages) => set({ active: true, messages, startedAt: Date.now() }),
+  startPath: null,
+  start: (messages) =>
+    set({
+      active: true,
+      messages,
+      startedAt: Date.now(),
+      startPath: typeof window !== "undefined" ? window.location.pathname : null,
+    }),
   stop: () => set({ active: false }),
 }));
 

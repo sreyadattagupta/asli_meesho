@@ -8,8 +8,10 @@ import { Volume2, VolumeX } from "lucide-react";
 import { LanguageToggle } from "@/components/ui/LanguageToggle";
 import { PersonaSwitcher } from "@/components/ui/PersonaSwitcher";
 import { UserMenu } from "@/components/nav/UserMenu";
+import { NavLoadingController } from "@/components/nav/NavLoadingController";
 import { useT } from "@/lib/i18n";
-import { useLocaleStore, useSessionStore, useUiStore } from "@/lib/store";
+import { useLocaleStore, useNavLoadingStore, useSessionStore, useUiStore } from "@/lib/store";
+import { PERSONA_MESSAGES } from "@/lib/loadingMessages";
 import { ROLE_HOME } from "@/lib/roles";
 import { stopSpeaking } from "@/lib/voice";
 import type { Role } from "@/lib/db/types";
@@ -26,23 +28,31 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const switchPersona = async (role: Role) => {
     if (!user || role === user.role) return;
+    // Show the overlay immediately — the switch does an API round-trip AND then loads a data-heavy
+    // dashboard, so without this the header sits unresponsive for a beat. stop() on any failure so a
+    // switch that never navigates doesn't ride the 8s safety timeout.
+    const nav = useNavLoadingStore.getState();
+    nav.start(PERSONA_MESSAGES[role]);
     try {
       const res = await fetch("/api/users/role", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ role }),
       });
-      if (!res.ok) return;
+      if (!res.ok) { nav.stop(); return; }
       const body = (await res.json()) as { user: { role: Role; name: string; sellerId?: string } };
       setUser({ ...user, role: body.user.role, sellerId: body.user.sellerId });
       router.push(ROLE_HOME[role]);
     } catch {
-      // network hiccup — stay on current persona
+      nav.stop(); // network hiccup — stay on current persona
     }
   };
 
   return (
     <div className="flex min-h-screen flex-col">
+      {/* Mounted here (not in a portal shell) so it stays alive across a persona switch, which swaps
+          one portal layout for another. Drives loading feedback for every in-app navigation. */}
+      <NavLoadingController />
       <header className="sticky top-0 z-40 border-b border-white/10 bg-[#0b0715]/80 backdrop-blur">
         <div className="mx-auto flex h-14 max-w-5xl items-center justify-between gap-3 px-4">
           <Link

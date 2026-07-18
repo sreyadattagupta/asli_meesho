@@ -10,7 +10,6 @@ import { Menu, X } from "lucide-react";
 import { SidebarNav } from "./SidebarNav";
 import { Breadcrumbs } from "./Breadcrumbs";
 import { NotificationBell } from "./NotificationBell";
-import { NavLoadingController } from "./NavLoadingController";
 import type { Role } from "@/lib/db/types";
 
 // Lives in each portal's layout, so it does not know (or need) the page's title — pages render their
@@ -35,8 +34,6 @@ export function PortalShell({ role, children }: { role: Role; children: ReactNod
 
   return (
     <div className="mx-auto flex w-full max-w-7xl gap-6 px-4 py-6">
-      <NavLoadingController />
-
       <aside className="hidden w-56 shrink-0 lg:block">
         <div className="sticky top-20">
           <SidebarNav role={role} path={path} />
