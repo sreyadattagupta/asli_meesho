@@ -711,12 +711,6 @@ taskkill /PID <pid> /F
 ```
 </details>
 
-<details>
-<summary><b><code>503 agent1_unavailable</code> when clicking "Run image check"</b></summary>
-
-The web app cannot reach the CV service. Check `curl http://localhost:8000/health`, then confirm
-`VLM_SERVICE_URL` in `web/.env.local` matches the port uvicorn actually bound.
-</details>
 
 <details>
 <summary><b>The first VLM call takes minutes / times out at 120s</b></summary>
