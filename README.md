@@ -658,6 +658,19 @@ uvicorn main:app --reload --port 8000
 A virtual environment keeps these packages off your system Python — OpenCV and ONNX Runtime pin
 versions you do not want globally.
 
+> **Working from the source zip rather than a `git clone`?** The two ONNX backbone weight files
+> (`clip-vit-b32/model.onnx.data`, 343MB and `dinov2-small/model.onnx.data`, 86MB) are stripped from
+> the zip to keep it small. Without them Agent 1's same-item gate degrades to the perceptual-hash
+> fallback — the app still runs, but the gate is not the real one. Restore them in one command:
+>
+> ```bash
+> pip install huggingface_hub
+> python -c "from huggingface_hub import snapshot_download; snapshot_download('dsreya/asli-onnx-backbones', local_dir='models')"
+> ```
+>
+> `git clone` includes them already, and the Docker image downloads them at build — this note is only
+> for the zip.
+
 <details>
 <summary><b>Expected output</b></summary>
 
