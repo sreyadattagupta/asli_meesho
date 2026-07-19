@@ -1192,8 +1192,10 @@ actually in this repository — nothing below is aspirational:
 | RapidFuzz | ≥3.9 | MIT | Fuzzy title/brand cross-check | [docs](https://rapidfuzz.github.io/RapidFuzz/) · [repo](https://github.com/rapidfuzz/RapidFuzz) |
 | selectolax | ≥0.3 | MIT | JSON-LD / OpenGraph parse (evidence) | [repo](https://github.com/rushter/selectolax) |
 | ImageHash | ≥4.3 | BSD-2 | Perceptual-hash last-resort fallback | [repo](https://github.com/JohannesBuchner/imagehash) |
-| PaddleOCR *(optional)* | latest | Apache-2.0 | Code-slip OCR (no cp314 wheel → degrades) | [docs](https://paddlepaddle.github.io/PaddleOCR/) · [repo](https://github.com/PaddlePaddle/PaddleOCR) |
-| transformers + torch *(optional)* | latest | Apache-2.0 / BSD-3 | SigLIP / SegFormer / AI-gen classifier | [docs](https://huggingface.co/docs/transformers) · [repo](https://github.com/huggingface/transformers) |
+| PaddleOCR + paddlepaddle | ≥2.7 / ≥2.6 | Apache-2.0 | Code-slip OCR. **In the deployed image**; optional locally (no cp314 wheel → degrades to VLM-OCR) | [docs](https://paddlepaddle.github.io/PaddleOCR/) · [repo](https://github.com/PaddlePaddle/PaddleOCR) |
+| transformers | ≥4.44,<5 | Apache-2.0 | Runs SigLIP / SegFormer / garment-type. **Required in the deployed image** | [docs](https://huggingface.co/docs/transformers) · [repo](https://github.com/huggingface/transformers) |
+| torch + torchvision | 2.5.1 / 0.20.1 (CPU) | BSD-3 | Backs those three models. Not needed locally — ONNX covers Agent 1 | [repo](https://github.com/pytorch/pytorch) |
+| safetensors · sentencepiece · accelerate | ≥0.4 / ≥0.2 / ≥0.34 | Apache-2.0 | Weight format · SigLIP tokeniser · CPU device placement | [repo](https://github.com/huggingface/safetensors) |
 
 ### Models
 
@@ -1202,7 +1204,7 @@ actually in this repository — nothing below is aspirational:
 | SigLIP-large-patch16-384 | Apache-2.0 | **Primary** same-product gate (deployed) | [HF](https://huggingface.co/google/siglip-large-patch16-384) |
 | CLIP ViT-B/32 (ONNX) | MIT | Same-item gate fallback — `clip/max` | [repo](https://github.com/openai/CLIP) |
 | DINOv2-small (ONNX) | Apache-2.0 | Evidence only (measured: adds no discrimination here) | [repo](https://github.com/facebookresearch/dinov2) |
-| SegFormer B2 Clothes | MIT | Garment segmentation | [HF](https://huggingface.co/mattmdjaga/segformer_b2_clothes) |
+| SegFormer B2 Clothes | **NVIDIA Source Code License — non-commercial** ⚠️ | Garment segmentation (degrades to GrabCut; swappable via `CLOTHES_SEG_MODEL`) | [HF](https://huggingface.co/mattmdjaga/segformer_b2_clothes) |
 | Qwen2.5-VL | Apache-2.0 | Local VLM via Ollama ($0/call) | [HF](https://huggingface.co/Qwen) |
 | Gemini (Flash) | Commercial (free tier) | Deployed VLM reads | [ai.google.dev](https://ai.google.dev) |
 | `dsreya/garment-type-classifier` | — | Garment type for size grading | [HF](https://huggingface.co/dsreya/garment-type-classifier) |
@@ -1221,6 +1223,26 @@ actually in this repository — nothing below is aspirational:
 | Supabase | Apache-2.0 (platform) | Managed PostgreSQL | [supabase.com](https://supabase.com) |
 | MongoDB Atlas | SSPL / Commercial | Account store | [mongodb.com](https://www.mongodb.com) |
 | Docker | Apache-2.0 | CV service image | [docker.com](https://www.docker.com) |
+| Google Cloud SDK (`gcloud`) | Apache-2.0 | Cloud Run deploy + logs (wrapped by `vlm-service/deploy.ps1`) | [cloud.google.com/sdk](https://cloud.google.com/sdk) |
+
+### Modified vs. directly integrated
+
+Every package above is installed unmodified from its official registry — **no vendored or forked
+third-party source in this repo**. The only derivative works are ours: `garment-dinov2` and
+`promise-dinov2` (fine-tunes of `facebook/dinov2-small`, Apache-2.0), `garment-type-classifier`, the
+ONNX exports in `asli-onnx-backbones` (format conversion only), and the `garment-size-grader` slopes
+fitted from ISO 8559 charts. Full breakdown in **[ATTRIBUTION.md](ATTRIBUTION.md)**.
+
+> ### ⚠️ Two dependencies are not cleared for commercial use
+> Declared rather than buried, because productionising this at Meesho would need action on both:
+> **SegFormer B2 Clothes** carries NVIDIA's non-commercial licence — already isolated behind a
+> GrabCut fallback and the `CLOTHES_SEG_MODEL` env swap. **DeepFashion In-shop** is CUHK
+> research-only and was used to train/calibrate the same-item matcher — re-fit on Meesho's own
+> catalogue to clear it (and it would likely improve accuracy on Indian ethnicwear).
+>
+> Everything else is permissive. The transitive tree was audited, not assumed: 426 packages, no
+> GPL/AGPL, four weak-copyleft (MPL/LGPL) packages — three build-time only, one being `sharp`'s stock
+> libvips binary. Table in [ATTRIBUTION.md](ATTRIBUTION.md).
 
 ### Research
 
