@@ -153,6 +153,17 @@ export default function ChallengeStep() {
       }
       setMatchResult(match);
 
+      // The CV service was unreachable, so NOTHING compared the photos. Failing closed is correct —
+      // but reporting it as "Product mismatch detected" accuses a seller for our outage, and burning
+      // an attempt on it raises the bar for their next honest try. Say what happened, keep the code,
+      // let them retry. (Seen in production: the container OOMed and every seller read it as a
+      // mismatch.)
+      if (match.unavailable) {
+        setChecks(IDLE_CHECKS);
+        setNote(match.reason);
+        return;
+      }
+
       // Staged reveal — perceived streaming (real SSE is overkill at this latency).
       setCheck("product", match.same_item ? "done" : "failed");
       await sleep(300);

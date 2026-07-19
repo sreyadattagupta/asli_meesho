@@ -1055,7 +1055,11 @@ flowchart LR
 # 2. CV service
 cd vlm-service
 gcloud run deploy asli-meesho-vlm --source . --region us-central1 \
-  --memory 4Gi --allow-unauthenticated
+  --memory 8Gi --allow-unauthenticated
+# 8Gi, not 4Gi: the container warms five models (SigLIP-large, garment-dinov2, promise-dinov2,
+# garment-type, clothes-seg). At 4Gi it OOMed at 4133 MiB mid-request — Cloud Run kills the
+# instance, /vlm/match 503s, and the seller is told possession failed. Check for
+# "Memory limit ... exceeded" in the Cloud Run logs if Agent 1 starts failing after a model is added.
 
 # 3. Frontend
 cd ../web

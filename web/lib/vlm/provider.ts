@@ -29,6 +29,10 @@ export interface MatchResult {
   /** Explainability signals from the production pipeline (service provider). Optional so
    *  the Gemini/mock providers satisfy the contract without the CV service. */
   signals?: MatchSignals;
+  /** True when NOTHING compared the photos — the service was unreachable and this is a fail-closed
+   *  placeholder, not a judgement. `same_item: false` alone cannot express the difference, and the
+   *  seller was being told "Product mismatch detected" when the CV container had simply died. */
+  unavailable?: boolean;
 }
 
 export interface MeasureSignals {
@@ -129,6 +133,9 @@ function failClosedMatch(): MatchResult {
     confidence: 0,
     reason: "Verification service is temporarily unavailable — please retake the photo and try again.",
     passed: false,
+    // Flagged so the UI can say what actually happened. Failing CLOSED is right; blaming the SELLER
+    // for it is not — an OOM-killed container was surfacing as "Product mismatch detected".
+    unavailable: true,
   };
 }
 

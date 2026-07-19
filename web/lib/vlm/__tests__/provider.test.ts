@@ -68,4 +68,30 @@ describe("GeminiProvider + withDegradation", () => {
     expect(r.confidence).toBe(0);
     expect(vlmDegraded()).toBe(true);
   });
+
+  // Failing closed is right; blaming the seller for it is not. Production OOM-killed the CV
+  // container and the seller was shown "Product mismatch detected" — the flag lets the UI tell the
+  // truth and lets the route skip recording an attempt against them.
+  it("marks a fail-closed possession result as UNAVAILABLE, not a mismatch", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 503, text: async () => "oom" }) as unknown as Response));
+    const wrapped: VlmProvider = withDegradation(new GeminiProvider());
+    const r = await wrapped.match(img(), new Blob([new Uint8Array(80)]), "AX42");
+    expect(r.unavailable).toBe(true);
+    expect(r.reason).toMatch(/temporarily unavailable/i);
+  });
+
+  it("a genuine model disagreement is NOT flagged unavailable", async () => {
+    const disagree: MatchResult = {
+      same_item: false, code_visible: true, confidence: 0.31,
+      reason: "different garment", passed: false,
+    };
+    const p: VlmProvider = {
+      name: "mock", match: async () => disagree,
+      measure: async () => { throw new Error("unused"); },
+      verifyDelivery: async () => { throw new Error("unused"); },
+    };
+    const r = await withDegradation(p).match(img(), img(), "AX42");
+    expect(r.unavailable).toBeUndefined();
+    expect(r.same_item).toBe(false);
+  });
 });

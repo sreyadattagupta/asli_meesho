@@ -62,6 +62,20 @@ export async function POST(req: Request) {
     const exif = exifFreshness(liveArrBuf);
     const adjustedConfidence = Math.min(1, Math.max(0, result.confidence + exif.weight));
 
+    // Nothing compared the photos — the CV service was unreachable. Recording a possession check
+    // here would count our outage as one of the seller's attempts, and `decide()` reads attempt
+    // count to RAISE the bar (invariant #7), so an outage would make their next honest try harder.
+    // The claimed code is spent either way (single-use, invariant #3); the UI reissues one.
+    if (result.unavailable) {
+      if (listingId) {
+        await repo.appendAudit({
+          listingId, actor: "possession-proof", event: "challenge_unavailable",
+          data: { code: claimed.code, reason: result.reason },
+        });
+      }
+      return ok(result);
+    }
+
     if (listingId) {
       const liveBuf = Buffer.from(liveArrBuf);
       const imageHash = crypto.createHash("sha256").update(liveBuf).digest("hex");
