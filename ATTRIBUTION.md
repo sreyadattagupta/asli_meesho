@@ -171,5 +171,3 @@ Third-party API terms still apply where used: SerpAPI (free tier, cached and moc
 Impact statistics (S1–S16) are sourced in `Meesho_Ecosystem_Problem_Solution_Research.xlsx`; the
 40–60% sizing-returns figure used on the admin dashboard is source **S9**.
 
-> No dependency, service, or model is used outside this list. Adding one requires updating this file
-> (declared-stack rule, `CLAUDE.md` §11).
