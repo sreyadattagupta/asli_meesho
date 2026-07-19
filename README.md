@@ -127,7 +127,7 @@ The core mechanic is the **possession challenge**:
 
 1. The seller uploads a catalog photo.
 2. Reverse-image search runs — as a **trigger only**. A match never blocks; it means "prove it".
-3. The system issues a **fresh 4-character code**, valid ~5 minutes, usable **once**.
+3. The system issues a **fresh 4-character code**, valid ~15 minutes, usable **once**.
 4. The seller writes it on paper and photographs it **next to the product, camera only** — no gallery upload.
 5. Vision models check three **independent** gates: *same item?*, *code visible?*, *taken live?*
 
@@ -184,7 +184,7 @@ flowchart TD
     B --> C{Hits?}
     C -->|"~60 found"| D[TRIGGER — not a verdict<br/>trust score computed]
     C -->|none| D
-    D --> E[Issue dynamic code<br/>4 chars · 5 min TTL · single-use]
+    D --> E[Issue dynamic code<br/>4 chars · 15 min TTL · single-use]
     E --> F[Camera-only capture<br/>product + handwritten code]
     F --> G[Segment garment<br/>SegFormer / GrabCut]
     G --> H[Same-product gate<br/>SigLIP-large · CLIP-ONNX fallback]
@@ -207,6 +207,16 @@ flowchart TD
 **Three independent gates.** `same_item`, `code_visible` and *taken-live* are evaluated separately and
 must each hold. A screenshot of a screen fails liveness; the wrong item fails same-item; a stale code
 fails the atomic single-use claim — **before any model runs**.
+
+**An outage is not one of the seller's attempts.** The claim is taken before the CV call, so a failure
+there would spend the code — and the code is *handwritten on a slip inside the photo*, so burning it
+does not merely cost a retry, it invalidates the photo and forces the seller to rewrite the slip and
+reshoot. When the CV service is unreachable the claim is therefore **released** (`repo.releaseChallenge`)
+and no `authenticity_check` is recorded, because `decide()` reads the attempt count to *raise* the bar
+(invariant #7) and our downtime must not make an honest seller's next try harder. Invariant #3 is
+intact: the release reverses a claim that verified nothing, never touches `expires_at` — so it cannot
+extend a code's life — and a real pass **or** fail still burns the code, which is what stops replay and
+brute force. Both halves are covered by the repo contract suite against **both** backends.
 
 **The gate is calibrated, not vibes.** Thresholds come from `Marqo/deepfashion-inshop`
 (`vlm-service/scripts/eval_matcher.py`) and are recorded in `models/same_item_calibration.json`:
@@ -575,6 +585,7 @@ asli_meesho/
 | `vlm-service/agent1/` | Agent 1 engine — `pipeline`, `reverse`, `evidence`, `score`, `forensics`, `crosscheck` |
 | `vlm-service/models/` | Pinned ONNX artifacts + `same_item_calibration.json` (the gate's operating point) |
 | `vlm-service/scripts/` | `eval_matcher.py` (calibration), ONNX exporters (torch only at export time) |
+| `vlm-service/deploy.ps1` | **The only supported way to deploy the CV service** — carries the resource floor and asserts it against the serving revision after every deploy |
 | `web/e2e/` | Playwright — `demo.spec.ts` (3 personas), `routing.spec.ts` (routing contract) |
 
 ---
@@ -719,6 +730,25 @@ The web app cannot reach the CV service. Check `curl http://localhost:8000/healt
 </details>
 
 <details>
+<summary><b>"Verification service is temporarily unavailable" on the possession step (deployed)</b></summary>
+
+Agent 1 is fine — the CV service died or was cut off mid-request, and `withDegradation()` failed
+closed. Work outward in this order:
+
+1. **Cloud Run OOM.** `gcloud logging read 'resource.labels.service_name="asli-meesho-vlm"' --limit 30`
+   and look for `Memory limit ... exceeded`. Then `cd vlm-service && ./deploy.ps1 -Check` — a serving
+   revision below `12Gi / concurrency 4` will OOM-kill the container on `/vlm/match`. Redeploy with
+   the script.
+2. **Timeout.** `/vlm/match` runs 26–57s warm. The route needs `maxDuration = 120` and the client
+   needs `VLM_HTTP_TIMEOUT_MS` above the observed latency — check the **Vercel variable**, not just
+   the code default, since a set variable wins.
+3. **Provider.** `curl <cloud-run>/health` — every model should report `loaded: true`.
+
+The seller's code is *not* spent by this failure, so once the service is healthy the photo they
+already took still verifies. No need to reshoot.
+</details>
+
+<details>
 <summary><b>The first VLM call takes minutes / times out at 120s</b></summary>
 
 Cold model load — SigLIP-large and SegFormer download and load on first use. Subsequent calls take
@@ -794,7 +824,8 @@ Or use `.\.venv\Scripts\activate.bat` from cmd.
 | `TRIGGER_SOURCE` | `serpapi` · `qdrant` · `mock` | `serpapi` | No | `serpapi` |
 | `SERPAPI_KEY` | Google Lens trigger | — | No → mock | `abc123…` |
 | `GEMINI_API_KEY` | Cloud VLM | — | If `VLM_PROVIDER=gemini` | `AIza…` |
-| `CHALLENGE_TTL_SECONDS` | Code lifetime (invariant #3) | `300` | No | `300` |
+| `CHALLENGE_TTL_SECONDS` | Code lifetime (invariant #3) | `900` | No | `900` |
+| `VLM_HTTP_TIMEOUT_MS` | Client ceiling on one CV call | `110000` | No | `110000` |
 | `NEXT_PUBLIC_ENABLE_VOICE` | Web Speech guidance | `true` | No | `true` |
 | `NEXT_PUBLIC_DEFAULT_LOCALE` | `en` · `hi` | `en` | No | `hi` |
 | `AUTH_TEST_BYPASS` | **Dev only.** Persona buttons. Hard-gated off in production | unset | No | `1` |
@@ -822,6 +853,12 @@ Or use `.\.venv\Scripts\activate.bat` from cmd.
 > **Missing a variable? Nothing crashes silently.** No `SERPAPI_KEY` → labelled mock trigger. No
 > `SUPABASE_URL` → in-memory repo. No CV service → `503` with a retry in the UI. Every degradation is
 > visible and labelled.
+
+> **A set variable beats the code default.** These defaults only apply when the variable is absent —
+> and on Vercel the values are stored Sensitive, so `vercel env pull` returns them blank and you
+> cannot read what production is actually using. Raising a default in code changes nothing there
+> until the variable itself is updated and the app redeployed. Verify by observing behaviour instead:
+> `fetch('/api/challenge')` and check `expiresAt - issuedAt`.
 
 ---
 
@@ -999,10 +1036,16 @@ the admin agent monitor report the live state.
 
 ```bash
 cd web
-npm run test          # 228 unit + integration (vitest)
+npm run test          # 261 unit + integration (vitest)
 npm run e2e           # Playwright — 3 personas + routing contract
 npx tsc --noEmit      # strict typecheck
 npm run lint
+
+# The SupabaseRepo half of the repo contract SKIPS without credentials. Run it for real before
+# trusting any Repo change — InMemoryRepo has no foreign keys, so FK violations pass locally and
+# only surface against the deployed backend.
+set -a; . ./.env.local; set +a
+npx vitest run lib/db/__tests__/repoContract.test.ts
 
 cd ../vlm-service
 pytest                # CV engine tests
@@ -1011,13 +1054,19 @@ pytest                # CV engine tests
 | Layer | Covers |
 |---|---|
 | **Unit** | The `decide()` matrix (including *"a genuine capture always clears the bar"* at every attempt), threshold parsing, wizard step navigation, size grading, EXIF |
-| **Integration** | Route RBAC, listing lifecycle, the MRP cross-field rule, challenge TTL + single-use, message participation, repo contract (**both backends satisfy the same suite**) |
+| **Integration** | Route RBAC, listing lifecycle, the MRP cross-field rule, challenge TTL + single-use + release-on-outage, message participation, repo contract (**both backends satisfy the same suite** — Supabase only when credentials are supplied, see above) |
 | **E2E** | Buyer marketplace → trust panel; admin queue → approve; seller trigger; every legacy redirect; all 8 seller nav items; *"seller lands on dashboard with no agent started"* |
 | **Calibration** | `scripts/eval_matcher.py` on `Marqo/deepfashion-inshop` — AUC/TAR@FAR recorded in the artifact rather than asserted from memory |
 
 Notable regression tests, each written after a real bug: a misconfigured `MATCH_THRESHOLD=0.90` once
 put the bar inside the genuine band and told every honest seller *"Product mismatch"*. There is now a
-test that fails if the configured floor ever drifts back there.
+test that fails if the configured floor ever drifts back there. A CV outage used to spend the seller's
+handwritten code; a test now asserts the same slip still verifies once the service returns.
+
+And a caution the repo earned the hard way: *"both backends satisfy the same suite"* was not actually
+true for months. The challenge tests claimed codes against a random UUID listing id — fine under
+InMemoryRepo, a foreign-key violation under Supabase — and because the Supabase suite skips without
+credentials, nobody saw it. Green tests only prove what they ran against.
 
 ---
 
@@ -1052,19 +1101,35 @@ flowchart LR
 #    Apply supabase/migrations/*.sql in order via the Supabase SQL editor.
 #    Skipping 0004 makes every publish fail: listings.stock would not exist.
 
-# 2. CV service
+# 2. CV service — ALWAYS through the script, never a hand-typed gcloud run deploy.
+#    PowerShell (the script resolves gcloud + CLOUDSDK_PYTHON itself).
 cd vlm-service
-gcloud run deploy asli-meesho-vlm --source . --region us-central1 \
-  --memory 8Gi --allow-unauthenticated
-# 8Gi, not 4Gi: the container warms five models (SigLIP-large, garment-dinov2, promise-dinov2,
-# garment-type, clothes-seg). At 4Gi it OOMed at 4133 MiB mid-request — Cloud Run kills the
-# instance, /vlm/match 503s, and the seller is told possession failed. Check for
-# "Memory limit ... exceeded" in the Cloud Run logs if Agent 1 starts failing after a model is added.
+.\deploy.ps1              # builds, deploys a canary with no traffic, asserts the resources
+.\deploy.ps1 -Promote     # shift 100% traffic once the canary's /health looks right
+.\deploy.ps1 -Check       # read-only audit of the live service — run before any demo
 
 # 3. Frontend
 cd ../web
 vercel --prod
 ```
+
+> **Why the script exists.** `gcloud run deploy` does not remember flags between runs — any flag you
+> leave off silently reverts to a Cloud Run default on the new revision. That is how the serving
+> revision drifted to `4Gi / concurrency 160`: `/vlm/match` OOM-killed the container mid-request
+> (`Memory limit of 4096 MiB exceeded with 4272 MiB used`), the route's `withDegradation()` failed
+> closed, and honest sellers were told *"Verification service is temporarily unavailable."* The
+> script carries the floor below and re-asserts it against the **serving** revision after every
+> deploy, so a regression fails loudly instead of surfacing as a broken possession step.
+
+| Flag | Value | Why |
+|---|---|---|
+| `--memory` | **12Gi** | Three torch HF models (SigLIP-large gate, garment-type ViT, SegFormer clothes-seg) load in-container on top of torch + paddle + onnxruntime + opencv. 8Gi OOMs during warmup; 4Gi OOMs on the first real `/vlm/match`. |
+| `--cpu` | 4 | Required for 12Gi, and the CV path is CPU-bound. |
+| `--concurrency` | **4** | Cloud Run's 80/160 default puts that many heavy CV requests on one instance and OOMs even at 12Gi — each `/vlm/match` holds hundreds of MB of tensors for ~30–60s. |
+| `--min-instances` | 1 | Cold start is 30–60s and exceeds the Vercel function timeout. Billable while idle — set back to 0 once judging ends (**2026-07-29**). |
+
+If Agent 1 starts failing after a model is added, check the Cloud Run log for
+`Memory limit ... exceeded` before suspecting the matcher.
 
 <details>
 <summary><b>Docker (local — mirrors the Cloud Run image)</b></summary>
