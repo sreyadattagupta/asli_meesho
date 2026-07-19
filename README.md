@@ -1311,7 +1311,7 @@ Malkov & Yashunin 2018 (*HNSW*) · ISO/IEC 30107-1 (*presentation attack detecti
 | **Sreya Datta Gupta** | Creator — product, full-stack, ML | [GitHub](https://github.com/sreyadattagupta) · <!-- TODO: LinkedIn --> |
 <!-- TODO: add teammates if this is a team submission -->
 
-**Team name:** <!-- TODO --> · **Submission:** Meesho ScriptedBy{Her} 2.0 — Round 3
+**Team name:** Sreya's Team · **Submission:** Meesho ScriptedBy{Her} 2.0 — Round 3
 
 ---
 
