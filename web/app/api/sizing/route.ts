@@ -9,6 +9,11 @@ import { assertOwnedListing } from "@/lib/listingOwnership";
 import { HttpError } from "@/lib/auth";
 import { fail, ok } from "@/lib/api";
 
+// Measurement waits on the CV service and fuses several images, so it runs longer than the
+// platform default allows. Without this the function is cut off mid-measure and returns an HTML
+// 504 the client cannot parse. Matches challenge and promise-keeper/check.
+export const maxDuration = 120;
+
 const DIMS: GradeDim[] = ["chest_cm", "waist_cm", "length_cm", "shoulder_cm", "sleeve_cm"];
 
 // A measurement's structured dims — prefer the CV engine's `measurements`, else reconstruct from the

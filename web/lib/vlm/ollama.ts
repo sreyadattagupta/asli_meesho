@@ -6,9 +6,14 @@ import type {
 
 const VLM_URL = process.env.VLM_SERVICE_URL ?? "http://localhost:8000";
 // Hard ceiling on a single VLM call. A cold-load / stuck model must never leave the seller
-// blocked on an infinite spinner — the abort throws, which withDegradation() catches and falls
-// back to the labelled MockProvider. Tunable so a slow CPU box can raise it (default 60s).
-const HTTP_TIMEOUT_MS = Number(process.env.VLM_HTTP_TIMEOUT_MS ?? 60_000);
+// blocked on an infinite spinner — the abort throws, which withDegradation() catches and fails
+// closed. Tunable so a slow CPU box can raise it.
+//
+// 110s, not 60s: /vlm/match measures 26–57s warm on Cloud Run's CPU, so a 60s ceiling aborted
+// healthy calls that were about to succeed and reported them to the seller as an outage. Kept just
+// under the routes' maxDuration=120 so we abort ourselves and return parseable JSON rather than
+// letting the platform kill the function and emit an HTML 504.
+const HTTP_TIMEOUT_MS = Number(process.env.VLM_HTTP_TIMEOUT_MS ?? 110_000);
 
 /** POST a multipart form to the VLM service with a bounded timeout (aborts on hang). */
 async function postForm(path: string, form: FormData): Promise<Response> {

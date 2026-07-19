@@ -7,6 +7,12 @@ import { fail, ok } from "@/lib/api";
 import { rateLimited } from "@/lib/rateLimit";
 import { exifFreshness } from "@/lib/engines/exif";
 
+// POST waits on the CV service, whose same-item gate runs 26–57s warm on CPU (longer on a cold
+// start). The platform default cuts the function off well before that and returns an HTML 504 the
+// client cannot parse — which surfaces to the seller as "Verification service is temporarily
+// unavailable" on a request that was actually still working. Matches promise-keeper/check.
+export const maxDuration = 120;
+
 const TTL_SECONDS = Number(process.env.CHALLENGE_TTL_SECONDS ?? 300);
 // No ambiguous chars (0/O, 1/I) — hand-writeable, VLM-readable.
 const ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
