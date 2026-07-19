@@ -1,13 +1,46 @@
 // Server-side image loading for the agent pipelines. Resolves a stored image reference to a Blob
-// the VlmProvider can post. ONLY two shapes are accepted, by design (defence in depth):
-//   • a data: URL (buyer/seller upload — decoded in-process, no I/O), or
-//   • a site-relative /public path (our own assets).
-// External/absolute URLs are rejected outright, so this can never be turned into an SSRF gadget,
-// and /public paths are containment-checked (+ symlink re-check) so they can never traverse out of
-// the public directory. Extensions are whitelisted.
+// the VlmProvider can post. THREE shapes are accepted, by design (defence in depth):
+//   • a data: URL (buyer/seller upload — decoded in-process, no I/O),
+//   • a site-relative /public path (our own assets), or
+//   • an object in OUR OWN Supabase Storage bucket — origin-allowlisted, never arbitrary hosts.
+// Everything else is rejected, so this can never be turned into an SSRF gadget, and /public paths
+// are containment-checked (+ symlink re-check) so they can never traverse out of the public
+// directory. Extensions are whitelisted.
+//
+// The Supabase case is not a loosening — it is the missing half. With DATA_BACKEND=supabase every
+// stored image IS an absolute storage URL, so rejecting absolute URLs outright meant Agent 4 could
+// never load the frozen catalog image: the delivery check threw before the VLM was ever called and
+// silently degraded to "couldn't verify". Confirmed in production — the request never reached the
+// CV service at all.
 import path from "node:path";
 
 const BASE = process.env.APP_BASE_URL ?? "http://localhost:3000";
+
+/** Origin of our own Supabase project, or null when unconfigured (local/in-memory runs). */
+function supabaseOrigin(): string | null {
+  const raw = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (!raw) return null;
+  try {
+    const u = new URL(raw);
+    return u.protocol === "https:" ? u.origin : null;
+  } catch {
+    return null;
+  }
+}
+
+/** True only for a PUBLIC object in our own bucket — same origin, https, public-object path. */
+function isOwnPublicStorageUrl(ref: string): boolean {
+  const origin = supabaseOrigin();
+  if (!origin) return false;
+  let u: URL;
+  try {
+    u = new URL(ref);
+  } catch {
+    return false;
+  }
+  // Compare parsed origins — never string-prefix matching, which "…supabase.co.evil.com" defeats.
+  return u.origin === origin && u.pathname.startsWith("/storage/v1/object/public/");
+}
 
 const MIME: Record<string, string> = {
   ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
@@ -33,7 +66,15 @@ export async function loadImageBlob(ref: string): Promise<Blob> {
     return new Blob([bytes], { type });
   }
 
-  // Only a site-relative /public path is allowed — never an external/absolute URL (no SSRF surface).
+  // Our own Supabase Storage object: allowlisted by parsed origin, fetched without following a
+  // redirect elsewhere (a 3xx to another host would re-open the SSRF hole the allowlist closes).
+  if (isOwnPublicStorageUrl(ref)) {
+    const res = await fetch(ref, { redirect: "error" });
+    if (!res.ok) throw new Error(`image fetch ${res.status} for ${ref}`);
+    return res.blob();
+  }
+
+  // Anything else must be a site-relative /public path — never an arbitrary absolute URL.
   if (!ref.startsWith("/") || ref.startsWith("//") || ref.includes("\\")) {
     throw new Error(`unsupported image ref: ${ref}`);
   }
