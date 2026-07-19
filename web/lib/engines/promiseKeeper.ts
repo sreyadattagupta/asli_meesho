@@ -27,9 +27,12 @@ export interface DeliveryObservation {
   /** method-aware same-product decision from the provider (mirrors Agent 1's fusion). `undefined`
    *  means verification did NOT run — which must be treated as "cannot confirm", never as a pass. */
   sameProduct?: boolean;
-  observedCategory?: string;
-  observedCount?: number;
-  observedSize?: Record<string, number>;
+  /** The VLM emits `null` (not an omitted key) when it could not read the category — and a VLM that
+   *  is down or returns malformed JSON does so on every field. Typed to include it so callers cannot
+   *  forget: an `!== undefined` guard lets null through and `null.toLowerCase()` throws. */
+  observedCategory?: string | null;
+  observedCount?: number | null;
+  observedSize?: Record<string, number> | null;
 }
 
 export type PromiseStatus =
@@ -114,7 +117,11 @@ export function checkPromise(frozen: FrozenPromise, obs: DeliveryObservation): P
   // 2. HARD GATE — garment category must not conflict (kurta ≠ T-shirt, saree ≠ footwear), even if
   //    the embedding was borderline-agreeable.
   const categoryConflict =
-    obs.observedCategory !== undefined && !categoryAgrees(obs.observedCategory, frozen.category);
+    // Truthy, not `!== undefined`: an unread category arrives as null, and "we could not read it"
+    // is not evidence of a conflict — treating it as one accused honest sellers, and passing it to
+    // categoryAgrees threw on null.toLowerCase(). An empty promised category is equally no evidence.
+    !!obs.observedCategory && !!frozen.category
+    && !categoryAgrees(obs.observedCategory, frozen.category);
 
   // 3. HARD GATE — a different product. Stop immediately; no similarity percentage, no trust change.
   if (obs.sameProduct === false || categoryConflict) {
@@ -144,7 +151,8 @@ export function checkPromise(frozen: FrozenPromise, obs: DeliveryObservation): P
   const mismatches: string[] = [];
   const codes: string[] = [];
 
-  if (obs.observedCount !== undefined && obs.observedCount < 1) {
+  // Same null trap: an unread count must not read as "zero items delivered".
+  if (typeof obs.observedCount === "number" && obs.observedCount < 1) {
     mismatches.push("ordered item not visible in the delivery photo");
     codes.push("count_mismatch");
   }

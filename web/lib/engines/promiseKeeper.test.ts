@@ -82,6 +82,34 @@ describe("checkPromise — identity hard gate", () => {
     expect(v.updateTrustScore).toBe(false);
   });
 
+  // Production crashed here: the CV service returns `category: null` when the VLM attribute read
+  // fails, null slips past an `!== undefined` guard, and the buyer got
+  // "Verification failed: TypeError: Cannot read properties of null (reading 'toLowerCase')".
+  it("survives a null attribute read and still honours the identity signal", () => {
+    const v = checkPromise(frozen, {
+      photoPresent: true, sameProduct: true, cosine: 0.9,
+      observedCategory: null, observedCount: null, observedSize: null,
+    });
+    expect(v.status).toBe("PROMISE_KEPT");
+    expect(v.promiseKept).toBe(true);
+  });
+
+  it("treats an unread category as no evidence, not as a conflict", () => {
+    const v = checkPromise(frozen, {
+      photoPresent: true, sameProduct: false, cosine: 0.2, observedCategory: null,
+    });
+    expect(v.status).toBe("PRODUCT_MISMATCH");
+    expect(v.mismatchCodes).not.toContain("category_mismatch"); // identity failed it, not the null
+  });
+
+  it("does not read an unread count as zero items delivered", () => {
+    const v = checkPromise(frozen, {
+      photoPresent: true, sameProduct: true, cosine: 0.9, observedCount: null,
+    });
+    expect(v.mismatchCodes).not.toContain("count_mismatch");
+    expect(v.status).toBe("PROMISE_KEPT");
+  });
+
   it("never assigns a similarity percentage to a non-verified state", () => {
     for (const obs of [
       { photoPresent: true, sameProduct: false as const, cosine: 0.4, observedCategory: "tshirt" },
