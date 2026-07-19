@@ -131,7 +131,9 @@ function failClosedMatch(): MatchResult {
     same_item: false,
     code_visible: false,
     confidence: 0,
-    reason: "Verification service is temporarily unavailable — please retake the photo and try again.",
+    // Don't say "retake" — the code on the seller's slip is given back when we fail this way, so the
+    // photo they already took still works. Asking them to reshoot would be wasted effort.
+    reason: "Verification service is temporarily unavailable — your code is still valid, tap Verify again in a moment.",
     passed: false,
     // Flagged so the UI can say what actually happened. Failing CLOSED is right; blaming the SELLER
     // for it is not — an OOM-killed container was surfacing as "Product mismatch detected".

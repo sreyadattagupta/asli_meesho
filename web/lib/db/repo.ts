@@ -42,6 +42,13 @@ export interface Repo {
   issueChallenge(code: string, ttlSeconds: number): Promise<Challenge>;
   /** Atomic single-use claim: null if unknown, expired, or already used. */
   claimChallenge(code: string, listingId: string): Promise<Challenge | null>;
+  /**
+   * Undo a claim when nothing was actually verified — i.e. the CV service was unreachable. The
+   * seller's code is written on a paper slip inside their photo, so spending it on our own outage
+   * forces them to rewrite the slip and reshoot. Safe to reverse precisely because no comparison
+   * happened: a real pass or fail keeps the code burned, which is what stops replay and brute force.
+   */
+  releaseChallenge(code: string): Promise<void>;
   // checks + measurements
   addCheck(c: Omit<AuthenticityCheck, "id" | "createdAt">): Promise<AuthenticityCheck>;
   listChecks(listingId: string): Promise<AuthenticityCheck[]>;

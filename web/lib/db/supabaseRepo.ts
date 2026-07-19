@@ -331,6 +331,14 @@ export class SupabaseRepo implements Repo {
     if (error) throw new Error(error.message);
     return data ? challengeFromDb(data as Row) : null;
   }
+  async releaseChallenge(code: string): Promise<void> {
+    // Clears the claim only — expires_at is untouched, so a released code cannot outlive its TTL.
+    const { error } = await this.sb
+      .from("challenges")
+      .update({ used_at: null, listing_id: null })
+      .eq("code", code);
+    if (error) throw new Error(error.message);
+  }
 
   // checks + measurements
   addCheck(c: Omit<AuthenticityCheck, "id" | "createdAt">) {

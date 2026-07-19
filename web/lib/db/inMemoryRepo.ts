@@ -127,6 +127,13 @@ export class InMemoryRepo implements Repo {
     this.challenges.set(code, claimed);
     return claimed;
   }
+  async releaseChallenge(code: string): Promise<void> {
+    const c = this.challenges.get(code);
+    if (!c) return;
+    // Clear only the claim. The original expiry stands, so releasing can never extend a code's life.
+    const { usedAt: _usedAt, listingId: _listingId, ...rest } = c;
+    this.challenges.set(code, rest);
+  }
 
   // ---- checks + measurements ----
   async addCheck(c: Omit<AuthenticityCheck, "id" | "createdAt">): Promise<AuthenticityCheck> {

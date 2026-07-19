@@ -48,6 +48,26 @@ function repoContract(name: string, make: () => Repo): void {
       const repo = make();
       expect(await repo.claimChallenge(freshCode(), crypto.randomUUID())).toBeNull();
     });
+
+    it("makes a released code claimable again", async () => {
+      // Used when the CV service was unreachable: nothing was verified, so the seller keeps the
+      // code already written on the slip in their photo.
+      const repo = make();
+      const code = freshCode();
+      await repo.issueChallenge(code, 300);
+      expect(await repo.claimChallenge(code, crypto.randomUUID())).not.toBeNull();
+      await repo.releaseChallenge(code);
+      expect(await repo.claimChallenge(code, crypto.randomUUID())).not.toBeNull();
+    });
+
+    it("does not resurrect an expired code on release", async () => {
+      // Release clears the claim, never the clock — otherwise it would be a TTL bypass.
+      const repo = make();
+      const code = freshCode();
+      await repo.issueChallenge(code, -1);
+      await repo.releaseChallenge(code);
+      expect(await repo.claimChallenge(code, crypto.randomUUID())).toBeNull();
+    });
   });
 
   describe(`${name} orders`, () => {

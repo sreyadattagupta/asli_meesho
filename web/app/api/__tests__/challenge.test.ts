@@ -91,6 +91,29 @@ describe("challenge routes (invariant #3)", () => {
     expect(ok.status).toBe(200);
   });
 
+  it("does not burn the code when the CV service is unavailable", async () => {
+    // The seller has written this code on a paper slip and photographed it next to the product.
+    // If our outage spends it, that photo is worthless — they must rewrite the slip and reshoot,
+    // which is exactly what sellers hit during the 4Gi OOM incident. Nothing was compared, so
+    // there is no replay risk in letting the same slip be retried.
+    const listingId = await makeListing();
+    const { code } = await (await GET()).json();
+    const { vlmMatch } = await import("@/lib/vlmClient");
+    vi.mocked(vlmMatch).mockResolvedValueOnce({
+      same_item: false, code_visible: false, confidence: 0, passed: false,
+      reason: "Verification service is temporarily unavailable.", unavailable: true,
+    });
+
+    const outage = await POST(verifyReq(code, listingId));
+    expect(outage.status).toBe(200);
+    expect((await outage.json()).unavailable).toBe(true);
+
+    // the same slip must still work once the service is back
+    const retry = await POST(verifyReq(code, listingId));
+    expect(retry.status).toBe(200);
+    expect((await retry.json()).passed).toBe(true);
+  });
+
   it("409s on an expired code", async () => {
     const listingId = await makeListing();
     const repo = await repoReady();

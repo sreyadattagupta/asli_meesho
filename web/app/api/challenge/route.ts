@@ -13,7 +13,11 @@ import { exifFreshness } from "@/lib/engines/exif";
 // unavailable" on a request that was actually still working. Matches promise-keeper/check.
 export const maxDuration = 120;
 
-const TTL_SECONDS = Number(process.env.CHALLENGE_TTL_SECONDS ?? 300);
+// 15 minutes, not 5. The clock starts when the code is issued, but everything that takes real time
+// happens after: find a pen, write the code on a slip, position the garment and slip, shoot it,
+// upload a multi-MB photo over 4G, then wait 26-57s for the CV service. Five minutes expired on
+// honest sellers mid-task and made them redo the slip. Still dynamic, time-bound and single-use.
+const TTL_SECONDS = Number(process.env.CHALLENGE_TTL_SECONDS ?? 900);
 // No ambiguous chars (0/O, 1/I) — hand-writeable, VLM-readable.
 const ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
 
@@ -71,8 +75,14 @@ export async function POST(req: Request) {
     // Nothing compared the photos — the CV service was unreachable. Recording a possession check
     // here would count our outage as one of the seller's attempts, and `decide()` reads attempt
     // count to RAISE the bar (invariant #7), so an outage would make their next honest try harder.
-    // The claimed code is spent either way (single-use, invariant #3); the UI reissues one.
+    //
+    // Give the code back for the same reason. It is written on a paper slip inside the seller's
+    // photo, so burning it on our outage forces them to rewrite the slip and reshoot the product —
+    // sellers hit exactly that during the CV outage. Single-use (invariant #3) still holds: the
+    // release only reverses a claim that verified nothing, the original expiry is untouched, and a
+    // real pass or fail keeps the code spent.
     if (result.unavailable) {
+      await repo.releaseChallenge(claimed.code);
       if (listingId) {
         await repo.appendAudit({
           listingId, actor: "possession-proof", event: "challenge_unavailable",
