@@ -59,12 +59,12 @@ Behind the flow, an **orchestrator** routes each listing by risk to specialist a
 | 🔑 | **Agent 1 · Possession-Proof** ★ | *"Do you actually have this?"* — matches the live capture against the catalog photo and checks that a single-use code is visible and freshly shot. | **Real models** — SigLIP / CLIP embeddings + a VLM cross-check |
 | 📏 | **Agent 2 · Smart Sizing** | *"Is the size real?"* — measures chest / waist / length in **centimetres** from a flat-lay beside an A4 sheet: geometry you can verify, not a guess. | **Real CV** — single-view homography |
 | 🛰️ | **Agent 3 · Risk Radar** | *"How much should we trust this seller?"* — turns history, KYC and image-reuse into a trust band, so trusted sellers earn a fast lane. | Deterministic engine over persisted signals |
-| 📦 | **Agent 4 · Promise Keeper** | *"Did it arrive as promised?"* — freezes the listing's promises at go-live and checks them against the delivery photo. | Simulation over persisted state |
+| 📦 | **Agent 4 · Promise Keeper** | *"Did it arrive as promised?"* — freezes the listing's promises at go-live and matches the buyer's delivery photo against the frozen catalog image. | **Real model** — a DINOv2 fine-tune trained for catalog↔parcel photos |
 | ⚖️ | **★ Decision Engine** | Composes every signal into the final verdict — **approve, re-challenge, or escalate to a human** — always with a reason. Never a silent yes/no. | **Real** — a pure, fully unit-tested function |
 
 **`✓ Asli Verified` requires Agent 1 _and_ Agent 2 to pass.** Nothing ever auto-blocks an honest seller: a mismatch always earns a fresh code, and only genuinely ambiguous cases reach a human reviewer.
 
-> 🟢 Agents **1 & 2 are real models end-to-end.** Agents **3 & 4 are honest working simulations** — real code, real persisted state, real explainable output — standing in for data Meesho already owns (a seller-history DB, a logistics API). They're clearly labelled `simulated` in the UI.
+> 🟢 Agents **1, 2 and 4 are real models end-to-end.** Agent **3 is an honest working simulation** — real code, real persisted state, real explainable output — standing in for a seller-history DB Meesho already owns, and clearly labelled `simulated` in the UI. Agent 4's *delivery events* are still simulated (no courier API), but the photo comparison itself is a trained model, not a stand-in.
 > 📐 Want the internals — thresholds, calibration, the retry state machine? Jump to **[§4 · AI agent architecture](#4-ai-agent-architecture)**.
 
 ---
@@ -173,7 +173,7 @@ panel. Ambiguous ones reach a **human reviewer**, whose decision feeds back into
 | **1** | **Possession-Proof** ★ | catalog photo, live capture, code | `same_item`, `code_visible`, `confidence`, `reason` | **Real models** |
 | **2** | **Smart Sizing** | flat-lay + A4/tape reference | `chest/waist/length/shoulder_cm`, `confidence`, size | **Real CV** |
 | **3** | **Risk Radar** | seller history, KYC, image reuse | `trustScore`, `band`, `fastLaneEligible` | Simulation (deterministic engine over persisted signals) |
-| **4** | **Promise Keeper** | frozen promise + delivery photo | `promiseKept`, `mismatches[]` | Simulation |
+| **4** | **Promise Keeper** | frozen catalog image + delivery photo | `same_product`, `cosine`, `status`, `mismatches[]` | **Real model** — `promise-dinov2` (delivery matcher) |
 | **★** | **Decision Engine** | all of the above | final trust score + verdict | **Real** — composes and explains |
 
 ### Agent 1 — how the gate decides
@@ -270,6 +270,37 @@ An A4 sheet has a known aspect ratio, so it calibrates pixels→cm exactly. This
 metrology** (Criminisi, Reid & Zisserman, IJCV 2000) — a geometric computation you can check, not a
 language model guessing.
 
+### Agent 4 — a matcher trained for the photo the buyer actually takes
+
+Agent 4 compares a studio catalog image against a photo the **buyer** took of the parcel: handheld,
+indoor light, off-axis, re-compressed. That domain gap is the whole problem, and a generic embedding
+does not survive it. Measured on the committed fixtures, the perceptual-hash fallback scored a
+**genuine same-item pair at 0.5938** while a **genuinely different dress scored 0.4688** — both under
+the 0.72 bar and only 0.12 apart. Every honest delivery came back a mismatch.
+
+So Agent 4 gets its **own** fine-tune, separate from Agent 1's: [`dsreya/promise-dinov2`](https://huggingface.co/dsreya/promise-dinov2),
+DINOv2-small trained on catalog↔parcel pairs, served through ONNX Runtime and baked into the image at
+build time. Same fixtures, same-item pair now **0.7003** against a learned bar of **0.6829**, different
+dress **0.0000**:
+
+| Signal | phash fallback | `promise-dinov2` |
+|---|---|---|
+| Genuine same item | 0.5938 ✗ below bar | **0.7003 ✓** |
+| Different product | 0.4688 | **0.0000** |
+| Separation | 0.12 | **0.70** |
+| False-accusation rate *(from the artifact's calibration)* | 0.646 | **0.066** |
+
+**The bar is deliberately looser than Agent 1's** (`neg_quantile` 0.90 vs 0.95) and comes from the
+artifact's own `gate_threshold`, not a hand-set constant. The asymmetry is the point: Agent 1's
+expensive error is letting a thief through, Agent 4's is **accusing an honest seller and docking their
+trust score**. The route therefore only writes to seller trust once identity actually verified — a
+mismatch, a low-confidence review or an unreadable photo never moves the score.
+
+Failure is treated as absence of evidence, never as guilt. If the CV service is unreachable, if the VLM
+returns malformed JSON, or if the attribute read comes back `null`, the verdict is **retake / review** —
+not "different product". An earlier version defaulted the other way and reported *"promise kept"* at
+~45% when nothing had been compared at all.
+
 ### Inter-agent communication
 
 Agents never call each other. The orchestrator owns sequencing; agents return typed signals; state
@@ -280,14 +311,18 @@ the step machine, not by UI convention.
 
 ## 📌 Demo implementation & scope
 
-For full transparency: **Agent 3 (Risk Radar)** and **Agent 4 (Promise Keeper)** ship as **demonstrated
-implementations** — real code, real persisted state, and real explainable output, running against
-seeded stand-in data and labelled `simulated` in the UI. This is a deliberate scoping decision, **not an
-implementation limitation**.
+For full transparency: **Agent 3 (Risk Radar)** ships as a **demonstrated implementation** — real code,
+real persisted state, and real explainable output, running against seeded stand-in data and labelled
+`simulated` in the UI. This is a deliberate scoping decision, **not an implementation limitation**.
 
-### Why these two are demonstrated, not live-integrated
+**Agent 4 (Promise Keeper) is no longer in that category.** Its comparison is a real trained model:
+the buyer uploads a delivery photo and `promise-dinov2` matches it against the frozen catalog image.
+What remains simulated is only the *delivery event* — the tracking timeline is fast-forwarded by a demo
+button because there is no courier API to subscribe to. The verdict itself is inference, not a script.
 
-Both agents depend on **Meesho's internal production ecosystem**, which is proprietary and cannot be
+### Why Agent 3 is demonstrated, not live-integrated
+
+It depends on **Meesho's internal production ecosystem**, which is proprietary and cannot be
 reached or validated from a public hackathon environment:
 
 - Real seller accounts and historical seller behaviour
@@ -306,22 +341,25 @@ explainable output — so the intended user experience and system behaviour are 
 - ✅ **Agent 1 — Possession-Proof** — real models end to end (SerpAPI trigger, SigLIP/DINOv2 same-product
   gate, VLM cross-check)
 - ✅ **Agent 2 — Smart Sizing** — real A4-homography computer vision, no language-model guessing
+- ✅ **Agent 4 — Promise Keeper** — real delivery-vs-catalog matching via `promise-dinov2`, a DINOv2
+  fine-tune trained specifically for the studio-photo↔parcel-photo gap
 - ✅ Multi-agent orchestration (`decide()`), the unified decision engine, and the full explainable
   verification pipeline
 
 These operate on **real images** and prove the core feasibility of the solution.
 
-### What each demonstrated agent needs to go live
+### What is still needed to go live
 
 - **Agent 3 — Risk Radar** requires real seller history, trust scores, behavioural signals and
   platform-wide listing data that exist only inside Meesho.
-- **Agent 4 — Promise Keeper** requires Meesho's delivery workflow, logistics APIs and proof-of-delivery
-  images to compare the delivered product against the frozen listing promise.
+- **Agent 4 — Promise Keeper** has its matcher in place; what it still needs is Meesho's delivery
+  workflow and logistics APIs, so proof-of-delivery images arrive from the courier instead of a buyer
+  upload and a demo fast-forward button.
 
-**In summary:** the demo exists solely to stand in for interactions that require Meesho's private
+**In summary:** what remains simulated stands in for interactions that require Meesho's private
 production infrastructure. The architecture, workflows and integration contracts are complete and
-**production-ready** — connected to the real Meesho platform, Agents 3 and 4 run under the same design
-with access to the required internal services.
+**production-ready** — connected to the real Meesho platform, these run under the same design with
+access to the required internal services.
 
 ---
 
@@ -349,13 +387,14 @@ flowchart TB
         A1["Agent 1 — Possession"]
         A2["Agent 2 — Sizing"]
         A3["Agent 3 — Risk Radar (simulated)"]
-        A4["Agent 4 — Promise Keeper (simulated)"]
+        A4["Agent 4 — Promise Keeper<br/>real matcher · simulated delivery events"]
     end
     subgraph CV["CV / VLM service — FastAPI on Cloud Run"]
         M1["SigLIP-large — same-product gate"]
         M2["CLIP + DINOv2 via ONNX Runtime<br/>no torch at serve time"]
         M3["OpenCV — GrabCut, HSV, ORB, homography"]
         M4["SegFormer clothes-seg · garment-type classifier"]
+        M6["promise-dinov2 — Agent 4 delivery matcher"]
         M5["VLM: Gemini (deployed) / Qwen2.5-VL via Ollama (local)"]
     end
     subgraph DATA["Data — Repo seam"]
@@ -621,11 +660,17 @@ Then `curl http://localhost:8000/health`:
 ```json
 { "status": "ok", "vlm_backend": "ollama", "ollama_reachable": true,
   "model": "qwen2.5vl:3b",
-  "same_item_gate": { "primary": "clip_onnx", "available": true } }
+  "same_item_gate": { "primary": "clip_onnx", "available": true },
+  "promise_gate": { "model": "dsreya/promise-dinov2", "available": true,
+                    "threshold": 0.6829, "load_error": null, "sync_error": null } }
 ```
 
 `"primary": "clip_onnx"` is **correct and expected** on a machine without torch — it is the labelled
 fallback. Deployed, this field reads `"primary": "siglip"`.
+
+`promise_gate` is Agent 4's matcher. If `available` is `false` the delivery check silently drops to the
+phash floor, so the field is worth reading before a demo — `load_error` and `sync_error` say which of
+"never downloaded" and "downloaded but would not load" actually happened.
 </details>
 
 ### 4 — Ollama (local VLM, optional)
@@ -766,6 +811,13 @@ Or use `.\.venv\Scripts\activate.bat` from cmd.
 | `GEMINI_API_KEY` | Cloud VLM key | — | If `gemini` |
 | `SAME_ITEM_THRESHOLD` | Override the calibrated gate | `0.75` (artifact) | No |
 | `SAME_ITEM_GATE_SIGNAL` | e.g. `clip/max` | artifact | No |
+| `GARMENT_HF_REPO` | Agent 1 same-item matcher | `dsreya/garment-dinov2` | No |
+| `PROMISE_HF_REPO` | **Agent 4** delivery matcher | `dsreya/promise-dinov2` | No |
+| `PROMISE_THRESHOLD` | Safety net only — the artifact's learned `gate_threshold` (`0.6829`) wins when present | `0.68` | No |
+
+> Both fine-tunes are **baked into the image at build time** (see `vlm-service/Dockerfile`), because the
+> serving container runs with `HF_HUB_OFFLINE=1` — a runtime Hub sync silently never completes there, and
+> Agent 4 quietly falls back to the phash floor that cannot tell a genuine delivery from a wrong one.
 
 > **Missing a variable? Nothing crashes silently.** No `SERPAPI_KEY` → labelled mock trigger. No
 > `SUPABASE_URL` → in-memory repo. No CV service → `503` with a retry in the UI. Every degradation is
@@ -851,7 +903,8 @@ A reused or expired code returns `409 code_used_or_expired` — **before** any m
 | `GET` | `/api/messages/threads` · `/api/notifications/count` | Inbox · unread badge | session |
 | `GET` `POST` | `/api/review/queue` · `/api/review/:id/decision` | HITL queue + decision | **admin** |
 | `GET` | `/api/admin/metrics` · `/api/admin/agents` · `/api/admin/sellers/:id` | Tiles · agent health · Seller 360 | **admin** |
-| `POST` | `/api/agents/risk-radar/score` · `/api/agents/promise-keeper/check` | Agents 3 & 4 (`simulated`) | session |
+| `POST` | `/api/agents/risk-radar/score` | Agent 3 (`simulated` seller history) | session |
+| `POST` | `/api/agents/promise-keeper/check` | Agent 4 — real delivery match via `promise-dinov2` | buyer |
 
 > **404, not 403, for non-participants.** A 403 confirms the id exists, turning the endpoint into an
 > id oracle. The same reasoning applies to another seller's listing.
@@ -990,7 +1043,7 @@ flowchart LR
 | **Cloud Run** | FastAPI CV service (`python:3.11-slim`) | `asli-meesho-vlm`, `us-central1` |
 | **Supabase** | PostgreSQL, RLS deny-all | project `upczztjmzhfagfwnjoxi` |
 | **MongoDB Atlas** | Accounts | — |
-| **HF Hub** | Model weights | `dsreya/garment-type-classifier`, `google/siglip-large-patch16-384`, `mattmdjaga/segformer_b2_clothes` |
+| **HF Hub** | Model weights | `dsreya/garment-type-classifier`, `dsreya/garment-dinov2`, `dsreya/promise-dinov2`, `google/siglip-large-patch16-384`, `mattmdjaga/segformer_b2_clothes` |
 
 ### Deploying
 
@@ -1085,6 +1138,7 @@ actually in this repository — nothing below is aspirational:
 | Gemini (Flash) | Commercial (free tier) | Deployed VLM reads | [ai.google.dev](https://ai.google.dev) |
 | `dsreya/garment-type-classifier` | — | Garment type for size grading | [HF](https://huggingface.co/dsreya/garment-type-classifier) |
 | `dsreya/garment-size-grader` | — | Size grading | [HF](https://huggingface.co/dsreya/garment-size-grader) |
+| `dsreya/promise-dinov2` | — | **Agent 4** delivery-vs-catalog matcher (DINOv2-small fine-tune) | [HF](https://huggingface.co/dsreya/promise-dinov2) |
 | Organika/sdxl-detector *(optional)* | Apache-2.0 | AI-generated-image signal | [HF](https://huggingface.co/Organika/sdxl-detector) |
 
 ### Services & tooling
@@ -1124,7 +1178,11 @@ Malkov & Yashunin 2018 (*HNSW*) · ISO/IEC 30107-1 (*presentation attack detecti
 <summary><b>Long term</b></summary>
 
 - **Agent 3 → real data**: swap the simulated seller-history engine for Meesho's, keeping the interface
-- **Agent 4 → real logistics**: delivery photos from the courier API
+- **Agent 4 → real logistics**: the matcher is trained and serving; what is left is subscribing to the
+  courier API so proof-of-delivery images arrive automatically instead of via a buyer upload
+- **Agent 4 → real delivery corpus**: `promise-dinov2` learns from synthetic parcel degradation because
+  DeepFashion Consumer-to-Shop is not on the Hub. Real user↔shop pairs should raise the genuine-pair
+  margin, which is currently thinner than the training distribution suggests
 - Qdrant embedding trigger at scale (HNSW) instead of SerpAPI's free tier
 - Feed the trust score to **PRISM** for ranking; feed blocked-listing signals to **Suraksha**
 - Reviewer decisions → continuous re-calibration (`/agent1/feedback` already accepts them)
