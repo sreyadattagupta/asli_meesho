@@ -11,6 +11,19 @@ function freshCode(): string {
   return `T-${crypto.randomUUID().slice(0, 8)}`;
 }
 
+/**
+ * A real listing to claim challenges against. `challenges.listing_id` is a FK, so a random UUID
+ * fails against Supabase (InMemoryRepo has no FKs, which is why passing one looked fine locally).
+ */
+async function makeListing(repo: Repo): Promise<string> {
+  const { seller } = await fixtures(repo);
+  const l = await repo.createListing({
+    sellerId: seller.id, title: "Contract tee", description: "", price: 199,
+    category: "kurtis", status: "draft", flowStep: "challenge", verified: false, rankBoost: 0,
+  });
+  return l.id;
+}
+
 /** Real rows for FK-constrained tests (Supabase enforces listing/buyer FKs on orders). */
 async function fixtures(repo: Repo): Promise<{ seller: Seller; buyer: User }> {
   const seller = await repo.createSeller({
@@ -29,9 +42,10 @@ function repoContract(name: string, make: () => Repo): void {
     it("claims a fresh code exactly once", async () => {
       const repo = make();
       const code = freshCode();
+      const listingId = await makeListing(repo);
       await repo.issueChallenge(code, 300);
-      const first = await repo.claimChallenge(code, crypto.randomUUID());
-      const second = await repo.claimChallenge(code, crypto.randomUUID());
+      const first = await repo.claimChallenge(code, listingId);
+      const second = await repo.claimChallenge(code, listingId);
       expect(first).not.toBeNull();
       expect(first?.usedAt).toBeTruthy();
       expect(second).toBeNull(); // single-use
@@ -54,10 +68,11 @@ function repoContract(name: string, make: () => Repo): void {
       // code already written on the slip in their photo.
       const repo = make();
       const code = freshCode();
+      const listingId = await makeListing(repo);
       await repo.issueChallenge(code, 300);
-      expect(await repo.claimChallenge(code, crypto.randomUUID())).not.toBeNull();
+      expect(await repo.claimChallenge(code, listingId)).not.toBeNull();
       await repo.releaseChallenge(code);
-      expect(await repo.claimChallenge(code, crypto.randomUUID())).not.toBeNull();
+      expect(await repo.claimChallenge(code, listingId)).not.toBeNull();
     });
 
     it("does not resurrect an expired code on release", async () => {
