@@ -22,7 +22,7 @@ A seller can't publish until they prove — on camera, in seconds — that they 
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 **[Live Demo](https://asli-meesho.vercel.app)** ·
-**[Video Walkthrough](#)** <!-- TODO: paste the demo video URL --> ·
+**[Video Walkthrough](https://www.youtube.com/watch?v=qCDVpj02TOY&t=8s)** ·
 **[GitHub](https://github.com/sreyadattagupta/asli_meesho)** ·
 **[5-minute demo script](#-demo-script-5-minutes)**
 
